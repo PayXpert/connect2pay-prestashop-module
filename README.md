@@ -1,21 +1,15 @@
-//-----------------------------------------------------------------
-// Prestashop PayXpert Payment Module
-// Version for Prestashop 1.4.X to 1.7.x
-//------------------------------------------------------------------
-
-This version works with all version of Prestashop
+# Prestashop PayXpert Payment Module
+### Version for Prestashop 1.4.X to 1.7.x
 
 The author of this plugin can NEVER be held responsible for this software.
 There is no warranty what so ever. You accept this by using this software.
 
-Changelog
-=========
-1.0.7 - Supports Prestashop 1.7
-1.0.1 - Improve Prestashop versions support
-1.0.0 - Initial Release
+## Changelog
+* 1.0.7 - Supports Prestashop 1.7
+* 1.0.1 - Improve Prestashop versions support
+* 1.0.0 - Initial Release
 
-Automatic Installation
-======================
+## Automatic Installation
 1. In Prestashop Admin panel, go to "Modules"
 
 2. Choose "Add a new module" or "Add a module from my computer" (according to your Prestashop version)
@@ -28,8 +22,7 @@ Automatic Installation
 
 6. Save your settings and you'll be ready to start using the module
 
-Manual Installation
-===================
+## Manual Installation
 1. Unzip the module zip archive
 
 2. Upload the "payxpert" folder to your Prestashop modules folder. No files will be overwritten, only added
@@ -40,7 +33,6 @@ Manual Installation
 
 5. Save your settings and you'll be ready to start using the module
 
-Support
-============
 
+## Support
 Please visit the PayXpert website (http://www.payxpert.com) for our support contact details.
