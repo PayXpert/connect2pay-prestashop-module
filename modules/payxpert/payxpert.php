@@ -33,7 +33,7 @@ class PayXpert extends PaymentModule {
    */
   public function __construct() {
     $this->name = 'payxpert';
-    $this->version = '1.0.8';
+    $this->version = '1.1.0';
 
     $this->tab = 'payments_gateways';
 
@@ -148,6 +148,7 @@ class PayXpert extends PaymentModule {
       $moduleParameters[] = 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_SOFORT';
       $moduleParameters[] = 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_PRZELEWY24';
       $moduleParameters[] = 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_IDEAL';
+      $moduleParameters[] = 'PAYXPERT_IS_IFRAME';
     }
 
     return $moduleParameters;
@@ -184,23 +185,29 @@ class PayXpert extends PaymentModule {
       return;
     }
 
+    $controller = 'payment';
+
+    if ($this->isIframeMode()) {
+      $controller = 'iframe';
+    }
+
     $this->smarty->assign($this->getTemplateVarInfos());
 
     $payment_options = array();
 
-    $ccOption = $this->getCreditCardPaymentOption();
+    $ccOption = $this->getCreditCardPaymentOption($controller);
     if ($ccOption != null) {
       $payment_options[] = $ccOption;
     }
-    $sofortOption = $this->getBankTransferViaSofortPaymentOption();
+    $sofortOption = $this->getBankTransferViaSofortPaymentOption($controller);
     if ($sofortOption != null) {
       $payment_options[] = $sofortOption;
     }
-    $przelewy24Option = $this->getBankTransferViaPrzelewy24PaymentOption();
+    $przelewy24Option = $this->getBankTransferViaPrzelewy24PaymentOption($controller);
     if ($przelewy24Option != null) {
       $payment_options[] = $przelewy24Option;
     }
-    $idealOption = $this->getBankTransferViaIDealPaymentOption();
+    $idealOption = $this->getBankTransferViaIDealPaymentOption($controller);
     if ($idealOption != null) {
       $payment_options[] = $idealOption;
     }
@@ -212,12 +219,12 @@ class PayXpert extends PaymentModule {
    *
    * @since Prestashop 1.7
    */
-  public function getCreditCardPaymentOption() {
+  public function getCreditCardPaymentOption($controller) {
     if (Configuration::get('PAYXPERT_PAYMENT_TYPE_CREDIT_CARD') == "true") {
       $option = new PrestaShop\PrestaShop\Core\Payment\PaymentOption();
       $option->setCallToActionText($this->l('Pay by Credit Card'));
       $option->setAction(
-          $this->context->link->getModuleLink($this->name, 'payment',
+          $this->context->link->getModuleLink($this->name, $controller,
               array('payment_type' => PayXpert\Connect2Pay\Connect2PayClient::_PAYMENT_TYPE_CREDITCARD), true));
 
       $this->context->smarty->assign('pxpCCLogo',
@@ -235,12 +242,12 @@ class PayXpert extends PaymentModule {
    *
    * @since Prestashop 1.7
    */
-  public function getBankTransferViaSofortPaymentOption() {
+  public function getBankTransferViaSofortPaymentOption($controller) {
     if (Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_SOFORT') == "true") {
       $option = new PrestaShop\PrestaShop\Core\Payment\PaymentOption();
       $option->setCallToActionText($this->l('Pay by Bank Transfer via Sofort'));
       $option->setAction(
-          $this->context->link->getModuleLink($this->name, 'payment',
+          $this->context->link->getModuleLink($this->name, $controller,
               array('payment_type' => PayXpert\Connect2Pay\Connect2PayClient::_PAYMENT_TYPE_BANKTRANSFER,
                   'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::_PAYMENT_PROVIDER_SOFORT), true));
 
@@ -259,12 +266,12 @@ class PayXpert extends PaymentModule {
    *
    * @since Prestashop 1.7
    */
-  public function getBankTransferViaPrzelewy24PaymentOption() {
+  public function getBankTransferViaPrzelewy24PaymentOption($controller) {
     if (Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_PRZELEWY24') == "true") {
       $option = new PrestaShop\PrestaShop\Core\Payment\PaymentOption();
       $option->setCallToActionText($this->l('Pay by Bank Transfer via Przelewy24'));
       $option->setAction(
-          $this->context->link->getModuleLink($this->name, 'payment',
+          $this->context->link->getModuleLink($this->name, $controller,
               array('payment_type' => PayXpert\Connect2Pay\Connect2PayClient::_PAYMENT_TYPE_BANKTRANSFER,
                   'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::_PAYMENT_PROVIDER_PRZELEWY24), true));
 
@@ -283,12 +290,12 @@ class PayXpert extends PaymentModule {
    *
    * @since Prestashop 1.7
    */
-  public function getBankTransferViaIDealPaymentOption() {
+  public function getBankTransferViaIDealPaymentOption($controller) {
     if (Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_IDEAL') == "true") {
       $option = new PrestaShop\PrestaShop\Core\Payment\PaymentOption();
       $option->setCallToActionText($this->l('Pay by Bank Transfer via iDeal'));
       $option->setAction(
-          $this->context->link->getModuleLink($this->name, 'payment',
+          $this->context->link->getModuleLink($this->name, $controller,
               array('payment_type' => PayXpert\Connect2Pay\Connect2PayClient::_PAYMENT_TYPE_BANKTRANSFER,
                   'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::_PAYMENT_PROVIDER_IDEALKP), true));
 
@@ -323,7 +330,6 @@ class PayXpert extends PaymentModule {
     if (!$this->checkPaymentOption($params)) {
       return;
     }
-
     $this->assignSmartyVariable('this_path', $this->_path);
     $this->assignSmartyVariable('this_path_ssl',
         (Configuration::get('PS_SSL_ENABLED') ? 'https://' : 'http://') . htmlspecialchars($_SERVER['HTTP_HOST'], ENT_COMPAT, 'UTF-8') .
@@ -414,6 +420,30 @@ class PayXpert extends PaymentModule {
       return "Payment type or provider is not enabled";
     }
 
+    $payment = $this->getPaymentClient($cart, $paymentType, $paymentProvider);
+
+    // prepare API
+    if ($payment->preparePayment() == false) {
+      $message = "PayXpert : can't prepare transaction - " . $payment->getClientErrorMessage();
+      $this->addLog($message, 3);
+      return $message;
+    }
+
+    header('Location: ' . $payment->getCustomerRedirectURL());
+    exit();
+  }
+
+  /**
+   * Generates the Connect2Pay payment URL
+   *
+   * For Prestashop >= 1.5
+   *
+   * @global type $cookie
+   * @param Cart $cart
+   * @return type
+   */
+  public function getPaymentClient($cart, $paymentType = null, $paymentProvider = null) {
+
     // get all informations
     $customer = new Customer((int) ($cart->id_customer));
     $currency = new Currency((int) ($cart->id_currency));
@@ -495,20 +525,10 @@ class PayXpert extends PaymentModule {
                (int) ($this->id) . '&key=' . $customer->secure_key);
     } else {
       $c2pClient->setCtrlCallbackURL($this->context->link->getModuleLink('payxpert', 'validation'));
-      $c2pClient->setCtrlRedirectURL(
-          $ctrlURLPrefix . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . 'index.php?controller=order-confirmation&id_cart=' . (int) ($cart->id) .
-               '&id_module=' . (int) ($this->id) . '&key=' . $customer->secure_key);
+      $c2pClient->setCtrlRedirectURL($this->getModuleLinkCompat('payxpert', 'return'));
     }
 
-    // prepare API
-    if ($c2pClient->preparePayment() == false) {
-      $message = "PayXpert : can't prepare transaction - " . $c2pClient->getClientErrorMessage();
-      $this->addLog($message, 3);
-      return $message;
-    }
-
-    header('Location: ' . $c2pClient->getCustomerRedirectURL());
-    exit();
+    return $c2pClient;
   }
 
   /**
@@ -599,11 +619,14 @@ class PayXpert extends PaymentModule {
           Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_PRZELEWY24'));
       $idealPaymentType = Tools::getValue('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_IDEAL',
           Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_IDEAL'));
+      $isIframe = Tools::getValue('PAYXPERT_IS_IFRAME',
+          Configuration::get('PAYXPERT_IS_IFRAME'));
 
       $result['PAYXPERT_PAYMENT_TYPE_CREDIT_CARD'] = ($creditCardPaymentType === "true" || $creditCardPaymentType == 1) ? 1 : 0;
       $result['PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_SOFORT'] = ($sofortPaymentType === "true" || $sofortPaymentType == 1) ? 1 : 0;
       $result['PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_PRZELEWY24'] = ($przelewy24PaymentType === "true" || $przelewy24PaymentType == 1) ? 1 : 0;
       $result['PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_IDEAL'] = ($idealPaymentType === "true" || $idealPaymentType == 1) ? 1 : 0;
+      $result['PAYXPERT_IS_IFRAME'] = ($isIframe === "true" || $isIframe == 1) ? 1 : 0;
     }
 
     return $result;
@@ -730,6 +753,18 @@ class PayXpert extends PaymentModule {
             array('id' => 'ideal_off', 'value' => 0, 'label' => $this->l('Disabled')) /* */
         ) /* */
       );
+      $fields_form['form']['input'][] = array( /* */
+        'type' => 'switch', /* */
+        'name' => 'PAYXPERT_IS_IFRAME', /* */
+        'label' => $this->l('Iframe mode'), /* */
+        'desc' => $this->l('Enable iframe mode'), /* */
+        'required' => false, /* */
+        'is_bool' => true, /* */
+        'values' => array(/* */
+            array('id' => 'iframe_on', 'value' => 1, 'label' => $this->l('Enabled')), /* */
+            array('id' => 'iframe_off', 'value' => 0, 'label' => $this->l('Disabled')) /* */
+        ) /* */
+      );
     }
 
     $helper = new HelperForm();
@@ -805,6 +840,7 @@ class PayXpert extends PaymentModule {
         $checkboxes[] = 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_SOFORT';
         $checkboxes[] = 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_PRZELEWY24';
         $checkboxes[] = 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFERT_IDEAL';
+        $checkboxes[] = 'PAYXPERT_IS_IFRAME';
       }
 
       foreach ($checkboxes as $checkbox) {
@@ -879,6 +915,26 @@ class PayXpert extends PaymentModule {
     }
 
     return $url;
+  }
+
+  /**
+   * Get the iframe config value
+   *
+   * @return boolean
+   */
+  public function isIframeMode() {
+    $is_iframe = Configuration::get('PAYXPERT_IS_IFRAME');
+
+    return $is_iframe === 'true' ? true : false;
+  }
+
+  /**
+   * Returns the modules path
+   *
+   * @return string
+   */
+  public function getPath() {
+    return $this->_path;
   }
 
   /* Theses functions are used to support all versions of Prestashop */
