@@ -2,7 +2,7 @@
 <module>
     <name>payxpert</name>
     <displayName><![CDATA[PayXpert Payment Solutions]]></displayName>
-    <version><![CDATA[1.1.1]]></version>
+    <version><![CDATA[1.1.2]]></version>
     <description><![CDATA[Accept payments today with PayXpert]]></description>
     <author><![CDATA[PayXpert]]></author>
     <tab><![CDATA[payments_gateways]]></tab>

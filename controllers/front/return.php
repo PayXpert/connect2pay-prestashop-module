@@ -52,6 +52,10 @@ class PayxpertReturnModuleFrontController extends ModuleFrontController
             ) /* */
         );
 
-        $this->setTemplate('module:' . $this->module->name . '/views/templates/hook/return.tpl');
+        if (version_compare(_PS_VERSION_, '1.7', '>=')) {
+            $this->setTemplate('module:' . $this->module->name . '/views/templates/front/payment_return.tpl');
+        } else {
+            $this->setTemplate('payment_return.tpl');
+        }
     }
 }

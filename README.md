@@ -5,6 +5,7 @@ The author of this plugin can NEVER be held responsible for this software.
 There is no warranty what so ever. You accept this by using this software.
 
 ## Changelog
+* 1.1.2 - Return action fixed in PS 1.6
 * 1.1.1 - Setting module name in payment options selection
 * 1.1.0 - Added iframe option
 * 1.0.7 - Supports Prestashop 1.7
