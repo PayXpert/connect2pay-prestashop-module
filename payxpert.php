@@ -36,7 +36,7 @@ class PayXpert extends PaymentModule
     public function __construct()
     {
         $this->name = 'payxpert';
-        $this->version = '1.2.0';
+        $this->version = '1.2.1';
         $this->module_key = '36f0012c50e666c56801493e0ad709eb';
 
         $this->tab = 'payments_gateways';
