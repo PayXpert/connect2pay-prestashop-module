@@ -19,7 +19,8 @@
  *  @license   http://www.apache.org/licenses/LICENSE-2.0 Apache License, Version 2.0 (the "License")
  */
 
-require_once dirname(__FILE__) . '/../../lib/Connect2PayClient.php';
+use PayXpert\Connect2Pay\containers\constant\PaymentMethod;
+use PayXpert\Connect2Pay\containers\constant\PaymentNetwork;
 
 /**
  *
@@ -53,15 +54,15 @@ class PayxpertPaymentModuleFrontController extends ModuleFrontController
         $paymentType = Tools::getValue('payment_type', null);
         $paymentProvider = Tools::getValue('payment_provider', null);
 
-        if ($paymentType !== null && PayXpert\Connect2Pay\C2PValidate::isPaymentMethod($paymentType)) {
+        if ($paymentType !== null && $this->module->validatePaymentMethod($paymentType)) {
             $params['payment_type'] = $paymentType;
 
-            if ($paymentProvider !== null && PayXpert\Connect2Pay\C2PValidate::isPaymentNetwork($paymentProvider)) {
+            if ($paymentProvider !== null && $this->module->validatePaymentNetwork($paymentProvider)) {
                 $params['payment_provider'] = $paymentProvider;
             }
 
             switch ($paymentType) {
-                case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER:
+                case PaymentMethod::BANK_TRANSFER:
                     if (version_compare(_PS_VERSION_, '1.7', '>=')) {
                         $template = 'module:' . $this->module->name . '/views/templates/front/payment_execution_bank_transfer.tpl';
                     } else {
@@ -70,26 +71,26 @@ class PayxpertPaymentModuleFrontController extends ModuleFrontController
 
                     if (isset($params['payment_provider'])) {
                         switch ($params['payment_provider']) {
-                            case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_SOFORT:
+                            case PaymentNetwork::SOFORT:
                                 $paymentLogo = 'sofort';
                                 break;
-                            case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_PRZELEWY24:
+                            case PaymentNetwork::PRZELEWY24:
                                 $paymentLogo = 'przelewy24';
                                 break;
-                            case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_IDEAL:
+                            case PaymentNetwork::IDEAL:
                                 $paymentLogo = 'ideal';
                                 break;
-                            case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_GIROPAY:
+                            case PaymentNetwork::GIROPAY:
                                 $paymentLogo = 'giropay';
                                 break;
                         }
                     }
                     break;
-                case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_WECHAT:
+                case PaymentMethod::WECHAT:
                     $paymentLogo = 'wechat';
                     $template = 'payment_execution_wechat16.tpl';
                     break;
-                case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_ALIPAY:
+                case PaymentMethod::ALIPAY:
                     $paymentLogo = 'alipay';
                     $template = 'payment_execution_alipay16.tpl';
                     break;

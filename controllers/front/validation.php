@@ -19,6 +19,9 @@
  *  @license   http://www.apache.org/licenses/LICENSE-2.0 Apache License, Version 2.0 (the "License")
  */
 
+use PayXpert\Connect2Pay\Connect2PayClient;
+use PayXpert\Connect2Pay\containers\constant\PaymentMethod;
+
 /**
  *
  * @since 1.5.0
@@ -40,10 +43,9 @@ class PayxpertValidationModuleFrontController extends ModuleFrontController
     public function initContent()
     {
         // $cart = $this->context->cart;
-        require_once dirname(__FILE__) . '/../../lib/Connect2PayClient.php';
 
         // init api
-        $c2pClient = new PayXpert\Connect2Pay\Connect2PayClient(
+        $c2pClient = new Connect2PayClient(
             $this->module->getPayXpertUrl(),
             Configuration::get('PAYXPERT_ORIGINATOR'),
             html_entity_decode(Configuration::get('PAYXPERT_PASSWORD'))
@@ -85,8 +87,14 @@ class PayxpertValidationModuleFrontController extends ModuleFrontController
 
                 // For Prestashop >= 1.7, multi payment types is possible
                 switch ($transaction->getPaymentMethod()) {
-                    case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER:
+                    case PaymentMethod::BANK_TRANSFER:
                         $paymentMean = $this->module->l('Bank Transfer');
+                        break;
+                    case PaymentMethod::ALIPAY:
+                        $paymentMean = $this->module->l('Alipay');
+                        break;
+                    case PaymentMethod::WECHAT:
+                        $paymentMean = $this->module->l('WeChat');
                         break;
                     default:
                         $paymentMean = $this->module->l('Credit Card');

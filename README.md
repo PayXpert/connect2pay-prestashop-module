@@ -5,6 +5,7 @@ The author of this plugin can NEVER be held responsible for this software.
 There is no warranty what so ever. You accept this by using this software.
 
 ## Changelog
+* 1.3.0 - Added 3DSv2 feature
 * 1.2.1 - Updated Seamless Checkout to v1.2.1
 * 1.2.0 - Added Seamless Checkout, Alipay and WeChatPay to PS1.6
 * 1.1.2 - Return action fixed in PS 1.6
@@ -27,6 +28,14 @@ There is no warranty what so ever. You accept this by using this software.
 
 6. Save your settings and you'll be ready to start using the module
 
+7. *IMPORTANT* You need to install the Connect2Pay SDK dependency on this module; using your terminal, enter the root folder of the module, then type:
+
+```sh
+php composer.phar install
+
+````
+
+
 ## Manual Installation
 1. Unzip the module zip archive
 
@@ -36,7 +45,14 @@ There is no warranty what so ever. You accept this by using this software.
 
 4. After installation, select Configure and setup your information
 
-5. Save your settings and you'll be ready to start using the module
+5. *IMPORTANT* You need to install the Connect2Pay SDK dependency on this module; using your terminal, enter the root folder of the module, then type:
+
+```sh
+php composer.phar install
+
+````
+
+6. Save your settings and you'll be ready to start using the module
 
 
 ## Support

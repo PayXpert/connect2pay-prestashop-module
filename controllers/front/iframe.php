@@ -19,7 +19,7 @@
  *  @license   http://www.apache.org/licenses/LICENSE-2.0 Apache License, Version 2.0 (the "License")
  */
 
-require_once dirname(__FILE__) . '/../../lib/Connect2PayClient.php';
+use PayXpert\Connect2Pay\containers\constant\PaymentMethod;
 
 /**
  *
@@ -48,10 +48,10 @@ class PayxpertIframeModuleFrontController extends ModuleFrontController
         $src = null;
 
         if (version_compare(_PS_VERSION_, '1.6', '>=')) {
-            if ($paymentType !== null && PayXpert\Connect2Pay\C2PValidate::isPaymentMethod($paymentType)) {
+            if ($paymentType !== null && $this->module->validatePaymentMethod($paymentType)) {
                 $payment = $this->module->getPaymentClient($cart, $paymentType, $paymentProvider);
 
-                if ($payment->preparePayment() == false) {
+                if ($payment == false) {
                     $message = "PayXpert : can't prepare transaction - " . $payment->getClientErrorMessage();
                     $this->module->addLog($message, 3);
                     Tools::redirect($this->module->getPageLinkCompat('order', true, null, "step=3"));
@@ -64,7 +64,7 @@ class PayxpertIframeModuleFrontController extends ModuleFrontController
         } elseif (
             $payment &&
             version_compare(_PS_VERSION_, '1.6', '>=') &&
-            $paymentType == PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_CREDITCARD
+            $paymentType == PaymentMethod::CREDIT_CARD
         ) {
             $customerToken = $payment->getCustomerToken();
 

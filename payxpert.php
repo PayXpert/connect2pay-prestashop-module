@@ -23,7 +23,21 @@ if (!defined('_PS_VERSION_')) {
     exit();
 }
 
-require_once(dirname(__FILE__) . '/lib/Connect2PayClient.php');
+require_once(dirname(__FILE__) . '/vendor/autoload.php');
+
+use PayXpert\Connect2Pay\Connect2PayClient;
+use PayXpert\Connect2Pay\containers\request\PaymentPrepareRequest;
+use PayXpert\Connect2Pay\containers\Order;
+use PayXpert\Connect2Pay\containers\Shipping;
+use PayXpert\Connect2Pay\containers\Shopper;
+use PayXpert\Connect2Pay\containers\Account;
+use PayXpert\Connect2Pay\containers\constant\OrderShippingType;
+use PayXpert\Connect2Pay\containers\constant\OrderType;
+use PayXpert\Connect2Pay\containers\constant\PaymentMethod;
+use PayXpert\Connect2Pay\containers\constant\PaymentMode;
+use PayXpert\Connect2Pay\containers\constant\AccountAge;
+use PayXpert\Connect2Pay\containers\constant\AccountLastChange;
+use PayXpert\Connect2Pay\containers\constant\AccountPaymentMeanAge;
 
 class PayXpert extends PaymentModule
 {
@@ -36,7 +50,7 @@ class PayXpert extends PaymentModule
     public function __construct()
     {
         $this->name = 'payxpert';
-        $this->version = '1.2.1';
+        $this->version = '1.3.0';
         $this->module_key = '36f0012c50e666c56801493e0ad709eb';
 
         $this->tab = 'payments_gateways';
@@ -313,7 +327,7 @@ class PayXpert extends PaymentModule
 
     public function refundTransaction($transactionID, $pxAmount)
     {
-        $c2pClient = new PayXpert\Connect2Pay\Connect2PayClient(
+        $c2pClient = new Connect2PayClient(
             $this->getPayXpertUrl(),
             Configuration::get('PAYXPERT_ORIGINATOR'),
             html_entity_decode(Configuration::get('PAYXPERT_PASSWORD'))
@@ -391,7 +405,7 @@ class PayXpert extends PaymentModule
                 $this->context->link->getModuleLink(
                     $this->name,
                     $controller,
-                    array('payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_CREDITCARD),
+                    array('payment_type' => PaymentMethod::CREDIT_CARD),
                     true
                 )
             );
@@ -424,8 +438,8 @@ class PayXpert extends PaymentModule
                     $this->name,
                     $controller,
                     array(
-                        'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER,
-                        'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_SOFORT
+                        'payment_type' => PaymentMethod::BANK_TRANSFER,
+                        'payment_provider' => PaymentNetwork::SOFORT
                     ),
                     true
                 )
@@ -459,8 +473,8 @@ class PayXpert extends PaymentModule
                     $this->name,
                     $controller,
                     array(
-                        'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER,
-                        'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_PRZELEWY24
+                        'payment_type' => PaymentMethod::BANK_TRANSFER,
+                        'payment_provider' => PaymentNetwork::PRZELEWY24
                     ),
                     true
                 )
@@ -494,8 +508,8 @@ class PayXpert extends PaymentModule
                     $this->name,
                     $controller,
                     array(
-                        'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER,
-                        'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_IDEAL
+                        'payment_type' => PaymentMethod::BANK_TRANSFER,
+                        'payment_provider' => PaymentNetwork::IDEAL
                     ),
                     true
                 )
@@ -623,7 +637,7 @@ class PayXpert extends PaymentModule
                         $this->name,
                         $controller,
                         array(
-                            'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_CREDITCARD,
+                            'payment_type' => PaymentMethod::CREDIT_CARD,
                             'content_only' => (bool)($controller=='iframe')
                         ),
                         true
@@ -652,8 +666,8 @@ class PayXpert extends PaymentModule
                         $this->name,
                         $controller,
                         array(
-                            'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER,
-                            'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_SOFORT
+                            'payment_type' => PaymentMethod::BANK_TRANSFER,
+                            'payment_provider' => PaymentNetwork::SOFORT
                         ),
                         true
                     ),
@@ -681,8 +695,8 @@ class PayXpert extends PaymentModule
                         $this->name,
                         $controller,
                         array(
-                            'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER,
-                            'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_PRZELEWY24
+                            'payment_type' => PaymentMethod::BANK_TRANSFER,
+                            'payment_provider' => PaymentNetwork::PRZELEWY24
                         ),
                         true
                     ),
@@ -710,8 +724,8 @@ class PayXpert extends PaymentModule
                         $this->name,
                         $controller,
                         array(
-                            'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER,
-                            'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_IDEAL
+                            'payment_type' => PaymentMethod::BANK_TRANSFER,
+                            'payment_provider' => PaymentNetwork::IDEAL
                         ),
                         true
                     ),
@@ -739,8 +753,8 @@ class PayXpert extends PaymentModule
                         $this->name,
                         $controller,
                         array(
-                            'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER,
-                            'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_GIROPAY
+                            'payment_type' => PaymentMethod::BANK_TRANSFER,
+                            'payment_provider' => PaymentNetwork::GIROPAY
                         ),
                         true
                     ),
@@ -768,7 +782,7 @@ class PayXpert extends PaymentModule
                         $this->name,
                         $controller,
                         array(
-                            'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_WECHAT
+                            'payment_type' => PaymentMethod::WECHAT
                         ),
                         true
                     ),
@@ -796,7 +810,7 @@ class PayXpert extends PaymentModule
                         $this->name,
                         $controller,
                         array(
-                            'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_ALIPAY
+                            'payment_type' => PaymentMethod::ALIPAY
                         ),
                         true
                     ),
@@ -867,7 +881,7 @@ class PayXpert extends PaymentModule
      * @param Cart $cart
      * @return type
      */
-    public function redirect($cart, $paymentType = null, $paymentProvider = null)
+    public function redirect($cart, $paymentType = null, $paymentNetwork = null)
     {
         // if module disabled, can't go through
         if (!$this->active) {
@@ -884,15 +898,15 @@ class PayXpert extends PaymentModule
             return "Module is not setup";
         }
 
-        if ($paymentType == null || !PayXpert\Connect2Pay\C2PValidate::isPaymentMethod($paymentType)) {
-            $paymentType = PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_CREDITCARD;
+        if ($paymentType == null || !$this->validatePaymentMethod($paymentType)) {
+            $paymentType = PaymentMethod::CREDITCARD;
         }
 
-        if (!$this->checkPaymentTypeAndProvider($paymentType, $paymentProvider)) {
+        if (!$this->checkPaymentTypeAndProvider($paymentType, $paymentNetwork)) {
             return "Payment type or provider is not enabled";
         }
 
-        $payment = $this->getPaymentClient($cart, $paymentType, $paymentProvider);
+        $payment = $this->getPaymentClient($cart, $paymentType, $paymentNetwork);
 
         // prepare API
         if ($payment->preparePayment() == false) {
@@ -907,6 +921,26 @@ class PayXpert extends PaymentModule
         exit();
     }
 
+    public function validatePaymentMethod($paymentMethod) {
+        return ((string) $paymentMethod == PaymentMethod::CREDIT_CARD ||
+            (string) $paymentMethod == PaymentMethod::BANK_TRANSFER ||
+            (string) $paymentMethod == PaymentMethod::WECHAT ||
+            (string) $paymentMethod == PaymentMethod::ALIPAY);            
+    }
+
+    public function validatePaymentNetwork($paymentNetwork) {
+        return ((string) $paymentNetwork == PaymentNetwork::SOFORT ||
+            (string) $paymentNetwork == PaymentNetwork::PRZELEWY24 ||
+            (string) $paymentNetwork == PaymentNetwork::IDEAL ||
+            (string) $paymentNetwork == PaymentNetwork::GIROPAY ||
+            (string) $paymentNetwork == PaymentNetwork::EPS ||
+            (string) $paymentNetwork == PaymentNetwork::POLI ||
+            (string) $paymentNetwork == PaymentNetwork::DRAGONPAY ||
+            (string) $paymentNetwork == PaymentNetwork::TRUSTLY);
+    }
+
+
+
     /**
      * Generates the Connect2Pay payment URL
      *
@@ -916,7 +950,7 @@ class PayXpert extends PaymentModule
      * @param Cart $cart
      * @return type
      */
-    public function getPaymentClient($cart, $paymentType = null, $paymentProvider = null)
+    public function getPaymentClient($cart, $paymentType = null, $paymentNetwork = null)
     {
         // get all informations
         $customer = new Customer((int) ($cart->id_customer));
@@ -935,75 +969,84 @@ class PayXpert extends PaymentModule
         $delivery_phone = (!empty($addr_delivery->phone)) ? $addr_delivery->phone : $addr_delivery->phone_mobile;
 
         // init api
-        $c2pClient = new PayXpert\Connect2Pay\Connect2PayClient(
+        $c2pClient = new Connect2PayClient(
             $this->getPayXpertUrl(),
             Configuration::get('PAYXPERT_ORIGINATOR'),
             html_entity_decode(Configuration::get('PAYXPERT_PASSWORD'))
         );
 
-        // customer informations
-        $c2pClient->setShopperID($cart->id_customer);
-        $c2pClient->setShopperEmail($customer->email);
-        $c2pClient->setShopperFirstName(Tools::substr($customer->firstname, 0, 35));
-        $c2pClient->setShopperLastName(Tools::substr($customer->lastname, 0, 35));
-        $c2pClient->setShopperCompany(Tools::substr($addr_invoice->company, 0, 128));
-        $c2pClient->setShopperAddress(Tools::substr(trim($addr_invoice->address1 . ' ' . $addr_invoice->address2), 0, 255));
-        $c2pClient->setShopperZipcode(Tools::substr($addr_invoice->postcode, 0, 10));
-        $c2pClient->setShopperCity(Tools::substr($addr_invoice->city, 0, 50));
-        $c2pClient->setShopperState(Tools::substr($invoice_state->name, 0, 30));
-        $c2pClient->setShopperCountryCode($invoice_country->iso_code);
-        $c2pClient->setShopperPhone(Tools::substr(trim($invoice_phone), 0, 20));
+        $prepareRequest = new PaymentPrepareRequest();
+        $shopper = new Shopper();
+        $account = new Account();
+        $order = new Order();
 
-        // Shipping information
-        $c2pClient->setShipToFirstName(Tools::substr($addr_delivery->firstname, 0, 35));
-        $c2pClient->setShipToLastName(Tools::substr($addr_delivery->lastname, 0, 35));
-        $c2pClient->setShipToCompany(Tools::substr($addr_delivery->company, 0, 128));
-        $c2pClient->setShipToPhone(Tools::substr(trim($delivery_phone), 0, 20));
-        $c2pClient->setShipToAddress(Tools::substr(trim($addr_delivery->address1 . " " . $addr_delivery->address2), 0, 255));
-        $c2pClient->setShipToZipcode(Tools::substr($addr_delivery->postcode, 0, 10));
-        $c2pClient->setShipToCity(Tools::substr($addr_delivery->city, 0, 50));
-        $c2pClient->setShipToState(Tools::substr($delivery_state->name, 0, 30));
-        $c2pClient->setShipToCountryCode($delivery_country->iso_code);
-        $c2pClient->setShippingName(Tools::substr($carrier->name, 0, 50));
-        $c2pClient->setShippingType(PayXpert\Connect2Pay\Connect2PayClient::SHIPPING_TYPE_PHYSICAL);
+        // customer informations
+        $account->setAge(AccountAge::LESS_30_DAYS);
+        $account->setDate("");
+        $account->setLastChange(AccountLastChange::LESS_30_DAYS);
+        $account->setLastChangeDate("");
+        $account->setPaymentMeanAge(AccountPaymentMeanAge::LESS_30_DAYS);
+        $account->setPaymentMeanDate("");
+        $account->setSuspicious(false);
+
+        $shopper->setAccount($account);
+        $shopper->setId($cart->id_customer);
+        $shopper->setEmail($customer->email);
+        $shopper->setFirstName(Tools::substr($customer->firstname, 0, 35));
+        $shopper->setLastName(Tools::substr($customer->lastname, 0, 35));
+        $shopper->setAddress1(Tools::substr(trim($addr_invoice->address1), 0, 255));
+        $shopper->setAddress2(Tools::substr(trim($addr_invoice->address2), 0, 255));
+        $shopper->setZipcode(Tools::substr($addr_invoice->postcode, 0, 10));
+        $shopper->setCity(Tools::substr($addr_invoice->city, 0, 50));
+        $shopper->setState(Tools::substr($invoice_state->name, 0, 30));
+        $shopper->setCountryCode($invoice_country->iso_code);
+        $shopper->setHomePhonePrefix("")->setHomePhone(Tools::substr(trim($invoice_phone), 0, 20));
+
+
+        $order->setShippingType(OrderShippingType::DIGITAL_GOODS);
 
         // Order informations
-        $c2pClient->setOrderID(Tools::substr(pSQL($cart->id), 0, 100));
-        $c2pClient->setOrderDescription(Tools::substr($this->l('Invoice:') . pSQL($cart->id), 0, 255));
-        $c2pClient->setCustomerIP($_SERVER['REMOTE_ADDR']);
-        $c2pClient->setCurrency($currency->iso_code);
+        $order->setId(Tools::substr(pSQL($cart->id), 0, 100));
+        $order->setDescription(Tools::substr($this->l('Invoice:') . pSQL($cart->id), 0, 255));
+
+        $shopper->setAccount($account);
 
         $total = number_format($cart->getOrderTotal(true, 3) * 100, 0, '.', '');
+        
+        // Set all information for the payment
+        $prepareRequest->setAmount($total);
+        $prepareRequest->setPaymentMethod($paymentType);
+        $prepareRequest->setPaymentMode(PaymentMode::SINGLE);
+        $prepareRequest->setCurrency($currency->iso_code);
 
-        $c2pClient->setAmount($total);
-        $c2pClient->setOrderCartContent($this->getProductsApi($cart));
-        $c2pClient->setPaymentMode(PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_MODE_SINGLE);
-        $c2pClient->setPaymentMethod($paymentType);
-        if ($paymentProvider != null && PayXpert\Connect2Pay\C2PValidate::isPaymentNetwork($paymentProvider)) {
-            $c2pClient->setPaymentNetwork($paymentProvider);
+        $prepareRequest->setShopper($shopper);
+        $prepareRequest->setOrder($order);
+
+        if ($paymentNetwork != null && $this->validatePaymentNetwork($paymentNetwork)) {
+            $prepareRequest->setPaymentNetwork($paymentNetwork);
         }
-        $c2pClient->setCtrlCustomData(PayXpert::getCallbackAuthenticityData($c2pClient->getOrderID(), $customer->secure_key));
+        $prepareRequest->setCtrlCustomData(PayXpert::getCallbackAuthenticityData($prepareRequest->getOrder()->getId(), $customer->secure_key));
 
         // Merchant notifications
         if (Configuration::get('PAYXPERT_MERCHANT_NOTIF') === "true" && Configuration::get('PAYXPERT_MERCHANT_NOTIF_TO')) {
-            $c2pClient->setMerchantNotification(true);
-            $c2pClient->setMerchantNotificationTo(Configuration::get('PAYXPERT_MERCHANT_NOTIF_TO'));
+            $prepareRequest->setMerchantNotification(true);
+            $prepareRequest->setMerchantNotificationTo(Configuration::get('PAYXPERT_MERCHANT_NOTIF_TO'));
             if (Configuration::get('PAYXPERT_MERCHANT_NOTIF_LANG')) {
-                $c2pClient->setMerchantNotificationLang(Configuration::get('PAYXPERT_MERCHANT_NOTIF_LANG'));
+                $prepareRequest->setMerchantNotificationLang(Configuration::get('PAYXPERT_MERCHANT_NOTIF_LANG'));
             }
         }
 
         $ctrlURLPrefix = Configuration::get('PS_SSL_ENABLED') ? 'https://' : 'http://';
 
         if (version_compare(_PS_VERSION_, '1.5', '<')) {
-            $c2pClient->setCtrlCallbackURL($ctrlURLPrefix . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . 'modules/payxpert/validation.php');
-            $c2pClient->setCtrlRedirectURL($ctrlURLPrefix . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . 'order-confirmation.php?id_cart=' . (int) ($cart->id) . '&id_module=' . (int) ($this->id) . '&key=' . $customer->secure_key);
+            $prepareRequest->setCtrlCallbackURL($ctrlURLPrefix . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . 'modules/payxpert/validation.php');
+            $prepareRequest->setCtrlRedirectURL($ctrlURLPrefix . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . 'order-confirmation.php?id_cart=' . (int) ($cart->id) . '&id_module=' . (int) ($this->id) . '&key=' . $customer->secure_key);
         } else {
-            $c2pClient->setCtrlCallbackURL($this->context->link->getModuleLink('payxpert', 'validation'));
-            $c2pClient->setCtrlRedirectURL($this->getModuleLinkCompat('payxpert', 'return', array('id_cart' => $cart->id)));
+            $prepareRequest->setCtrlCallbackURL($this->context->link->getModuleLink('payxpert', 'validation'));
+            $prepareRequest->setCtrlRedirectURL($this->getModuleLinkCompat('payxpert', 'return', array('id_cart' => $cart->id)));
         }
 
-        return $c2pClient;
+        return $c2pClient->preparePayment($prepareRequest);
     }
 
     /**
@@ -1465,21 +1508,21 @@ class PayXpert extends PaymentModule
         }
     }
 
-    private function checkPaymentTypeAndProvider($paymentType, $paymentProvider)
+    private function checkPaymentTypeAndProvider($paymentType, $paymentNetwork)
     {
         // For Prestashop >=1.7, check that the payment type is enabled
         if (version_compare(_PS_VERSION_, '1.7.0', '>=') === true) {
             switch ($paymentType) {
-                case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_CREDITCARD:
+                case PaymentMethod::CREDIT_CARD:
                     return Configuration::get('PAYXPERT_PAYMENT_TYPE_CREDIT_CARD') === "true";
-                case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER:
-                    if ($paymentProvider !== null) {
-                        switch ($paymentProvider) {
-                            case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_SOFORT:
+                case PaymentMethod::BANK_TRANSFER:
+                    if ($paymentNetwork !== null) {
+                        switch ($paymentNetwork) {
+                            case PaymentNetwork::SOFORT:
                                 return Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_SOFORT') === "true";
-                            case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_PRZELEWY24:
+                            case PaymentNetwork::PRZELEWY24:
                                 return Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_PRZELEWY24') === "true";
-                            case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_IDEAL:
+                            case PaymentNetwork::IDEAL:
                                 return Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_IDEAL') === "true";
                         }
                     }

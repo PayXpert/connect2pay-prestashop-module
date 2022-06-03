@@ -19,7 +19,7 @@
  *  @license   http://www.apache.org/licenses/LICENSE-2.0 Apache License, Version 2.0 (the "License")
  */
 
-require_once dirname(__FILE__) . '/../../lib/Connect2PayClient.php';
+use PayXpert\Connect2Pay\Connect2PayClient;
 
 /**
  *
@@ -46,7 +46,12 @@ class PayxpertReturnModuleFrontController extends ModuleFrontController
             $ctrlURLPrefix = Configuration::get('PS_SSL_ENABLED') ? 'https://' : 'http://';
 
             if (!empty($this->context->cookie->pxpToken)) {
-                $c2pClient = $this->module->getPaymentClient($cart);
+                $c2pClient = new Connect2PayClient(
+                    $this->module->getPayXpertUrl(),
+                    Configuration::get('PAYXPERT_ORIGINATOR'),
+                    html_entity_decode(Configuration::get('PAYXPERT_PASSWORD'))
+                );
+
                 if (!empty($_POST['data']) && !empty($this->context->cookie->pxpToken)) {
 
                     if ($c2pClient->handleRedirectStatus($_POST['data'], $this->context->cookie->pxpToken)) {
