@@ -1,1652 +1,857 @@
 <?php
-/**
- * Copyright 2013-2018 PayXpert
- *
- *   Licensed under the Apache License, Version 2.0 (the "License");
- *   you may not use this file except in compliance with the License.
- *   You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- *   Unless required by applicable law or agreed to in writing, software
- *   distributed under the License is distributed on an "AS IS" BASIS,
- *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *   See the License for the specific language governing permissions and
- *   limitations under the License.
- *
- *  @author    Regis Vidal
- *  @copyright 2013-2018 PayXpert
- *  @license   http://www.apache.org/licenses/LICENSE-2.0 Apache License, Version 2.0 (the "License")
- */
+
+use Payxpert\Classes\PayxpertConfiguration;
+use Payxpert\Classes\PayxpertCronLog;
+use Payxpert\Classes\PayxpertPaymentMethod;
+use Payxpert\Classes\PayxpertPaymentToken;
+use Payxpert\Classes\PayxpertPaymentTransaction;
+use Payxpert\Classes\PayxpertSubscription;
+use PayXpert\Connect2Pay\containers\constant\PaymentMethod;
+use PayXpert\Connect2Pay\containers\constant\PaymentMode;
+use Payxpert\Utils\Installer;
+use Payxpert\Utils\Logger;
+use Payxpert\Utils\Utils;
+use Payxpert\Utils\Webservice;
+use PrestaShop\PrestaShop\Core\Payment\PaymentOption;
+
+require_once __DIR__ . '/vendor/autoload.php';
 
 if (!defined('_PS_VERSION_')) {
-    exit();
+    exit;
 }
 
-require_once(dirname(__FILE__) . '/lib/Connect2PayClient.php');
-
-class PayXpert extends PaymentModule
+class Payxpert extends PaymentModule
 {
-    protected $_postErrors = array();
-    protected $_html = '';
+    public $bootstrap;
 
-    /**
-     * Constructor
-     */
+    /** @var string[] */
+    public $hooks = [
+        'actionAdminControllerSetMedia',
+        'actionFrontControllerSetMedia',
+        'dashboardData',
+        'dashboardZoneOne',
+        'displayAdminOrder',
+        'displayCustomerAccount',
+        'paymentOptions',
+        'paymentReturn',
+    ];
+
     public function __construct()
     {
         $this->name = 'payxpert';
-        $this->version = '1.2.1';
-        $this->module_key = '36f0012c50e666c56801493e0ad709eb';
-
         $this->tab = 'payments_gateways';
+        $this->version = '2.0.0';
+        $this->author = 'We+';
+        $this->need_instance = 0;
 
-        $this->author = 'PayXpert';
-        $this->need_instance = 1;
-
-        $this->controllers = array('payment', 'validation');
-        $this->is_eu_compatible = 1;
-
-        if (version_compare(_PS_VERSION_, '1.5', '>=')) {
-            $this->ps_versions_compliancy = array('min' => '1.4.0.0', 'max' => _PS_VERSION_);
-        }
-
-        if (version_compare(_PS_VERSION_, '1.6', '>=')) {
-            $this->bootstrap = true;
-        }
+        $this->bootstrap = true;
 
         parent::__construct();
 
-        $this->displayName = 'PayXpert Payment Solutions';
-        $this->description = $this->l("Accept payments today with PayXpert");
-        $this->confirmUninstall = $this->l('Are you sure about removing these details?');
+        $this->displayName = $this->l('Payment Module - PayXpert Service');
+        $this->description = $this->l('PayXpert Description');
 
-        if (!count(Currency::checkPaymentCurrencies($this->id))) {
-            $this->warning = $this->l('No currency has been set for this module.');
-        }
-
-        /* For 1.4.3 and less compatibility */
-        $updateConfig = array('PS_OS_CHEQUE' => 1, 'PS_OS_PAYMENT' => 2, 'PS_OS_PREPARATION' => 3, 'PS_OS_SHIPPING' => 4,
-            'PS_OS_DELIVERED' => 5, 'PS_OS_CANCELED' => 6, 'PS_OS_REFUND' => 7, 'PS_OS_ERROR' => 8, 'PS_OS_OUTOFSTOCK' => 9,
-            'PS_OS_BANKWIRE' => 10, 'PS_OS_PAYPAL' => 11, 'PS_OS_WS_PAYMENT' => 12);
-
-        foreach ($updateConfig as $u => $v) {
-            if (!Configuration::get($u) || (int) Configuration::get($u) < 1) {
-                if (defined('_' . $u . '_') && (int) constant('_' . $u . '_') > 0) {
-                    Configuration::updateValue($u, constant('_' . $u . '_'));
-                } else {
-                    Configuration::updateValue($u, $v);
-                }
-            }
-        }
+        $this->ps_versions_compliancy = ['min' => '1.7', 'max' => _PS_VERSION_];
     }
 
-    /**
-     * Install method
-     */
+    public function getModuleTabs()
+    {
+        return [
+            // Main menu
+            [
+                'class_name' => 'AdminPayxpertMenu',
+                'parent_class_name' => 'IMPROVE',
+                'name' => [
+                    'en' => 'PayXpert',
+                ],
+                'visible' => true,
+                'icon' => 'apps',
+            ],
+            // Sub-menu configuration
+            [
+                'class_name' => 'AdminPayxpertConfiguration',
+                'parent_class_name' => 'AdminPayxpertMenu',
+                'name' => [
+                    'en' => 'Configuration',
+                ],
+                'visible' => true,
+                'icon' => 'settings',
+            ],
+            // Sub-menu transaction
+            [
+                'class_name' => 'AdminPayxpertTransaction',
+                'parent_class_name' => 'AdminPayxpertMenu',
+                'name' => [
+                    'en' => 'Transactions',
+                ],
+                'visible' => true,
+                'icon' => 'files',
+            ],
+            // Sub-menu subscription
+            [
+                'class_name' => 'AdminPayxpertSubscription',
+                'parent_class_name' => 'AdminPayxpertMenu',
+                'name' => [
+                    'en' => 'Subscriptions',
+                    'fr' => 'Abonnements',
+                ],
+                'visible' => true,
+                'icon' => 'files',
+            ],
+        ];
+    }
+
     public function install()
     {
-        // call parents
-        if (!parent::install()) {
-            $errorMessage = Tools::displayError($this->l('PayXpert installation : install failed.'));
-            $this->addLog($errorMessage, 3, '000002');
-            return false;
-        }
+        Logger::info('Launch');
 
-        $hookResult = true;
-
-        if (version_compare(_PS_VERSION_, '1.7', '<')) {
-            if (version_compare(_PS_VERSION_, '1.6', '>=')) {
-                if (!$this->installDB()) {
-                    $errorMessage = Tools::displayError($this->l('PayXpert installation : Tables failed.'));
-                    $this->addLog($errorMessage, 3, '000002');
-
-                    return false;
-                }
-                $hookResult = $hookResult && $this->registerHook('adminOrder') && $this->registerHook('header');
-            }
-            $hookResult = $hookResult && $this->registerHook('payment');
-        } else {
-            $hookResult = $hookResult && $this->registerHook('paymentOptions');
-        }
-        $hookResult = $hookResult && $this->registerHook('paymentReturn');
-
-        if (!$hookResult) {
-            $errorMessage = Tools::displayError($this->l('PayXpert installation : hooks failed.'));
-            $this->addLog($errorMessage, 3, '000002');
+        try {
+            $install = parent::install() && Installer::install($this);
+        } catch (Exception $e) {
+            Logger::critical($e->getMessage());
+            $this->_errors[] = $e->getMessage();
+            $this->uninstall();
 
             return false;
         }
 
-        // Add configuration parameters
-        foreach ($this->getModuleParameters() as $parameter) {
-            if (!Configuration::updateValue($parameter, '')) {
-                $errorMessage = Tools::displayError($this->l('PayXpert installation : configuration failed.'));
-                $this->addLog($errorMessage, 3, '000002');
-
-                return false;
-            }
+        if ($install) {
+            Tools::clearSf2Cache();
+            Logger::info('Installation complete');
         }
 
-        $this->addLog($this->l('PayXpert installation : installation successful'));
-
-        return true;
+        return $install;
     }
 
-    public function installDB()
-    {
-        $sql = "CREATE TABLE IF NOT EXISTS `" . _DB_PREFIX_ . $this->name . "_transactions` (
-                `id_". $this->name . "_transaction` int(11) NOT NULL AUTO_INCREMENT,
-                `id_order` int(11) NOT NULL,
-                `transaction_id` varchar(32) NOT NULL,
-                `error_code` int(11) NOT NULL,
-                `refund` decimal(20,6) NOT NULL DEFAULT 0,
-                PRIMARY KEY (`id_". $this->name . "_transaction`)
-              ) ENGINE=ENGINE_TYPE DEFAULT CHARSET=utf8";
-        if (!Db::getInstance()->execute($sql)) {
-            return false;
-        }
-        return true;
-    }
-
-    /**
-     * Uninstall the module
-     *
-     * @return boolean
-     */
     public function uninstall()
     {
-        $result = parent::uninstall();
+        try {
+            $uninstall = parent::uninstall() && Installer::uninstall($this);
+        } catch (Exception $e) {
+            Logger::critical($e->getMessage());
+            $this->_errors[] = $e->getMessage();
 
-        foreach ($this->getModuleParameters() as $parameter) {
-            $result = $result || Configuration::deleteByName($parameter);
-        }
-
-        return $result;
-    }
-
-    private function getModuleParameters()
-    {
-        $moduleParameters = array( /* */
-            'PAYXPERT_ORIGINATOR', /* */
-            'PAYXPERT_PASSWORD', /* */
-            'PAYXPERT_URL', /* */
-            'PAYXPERT_MERCHANT_NOTIF', /* */
-            'PAYXPERT_MERCHANT_NOTIF_TO', /* */
-            'PAYXPERT_MERCHANT_NOTIF_LANG' /* */
-        );
-
-        if (version_compare(_PS_VERSION_, '1.6', '>=')) {
-            $moduleParameters[] = 'PAYXPERT_PAYMENT_TYPE_CREDIT_CARD';
-            $moduleParameters[] = 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_SOFORT';
-            $moduleParameters[] = 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_PRZELEWY24';
-            $moduleParameters[] = 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_IDEAL';
-            $moduleParameters[] = 'PAYXPERT_IS_IFRAME';
-            if (version_compare(_PS_VERSION_, '1.7', '<')) {
-                $moduleParameters[] = 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_GIROPAY';
-                $moduleParameters[] = 'PAYXPERT_PAYMENT_TYPE_WECHAT';
-                $moduleParameters[] = 'PAYXPERT_PAYMENT_TYPE_ALIPAY';
-            }
-        }
-
-        return $moduleParameters;
-    }
-
-    public function saveTransaction($data)
-    {
-        $sql = "INSERT INTO `" . _DB_PREFIX_ . $this->name . "_transactions` (`id_order`, `transaction_id`, `error_code`) VALUES (".(int)$data['id_order'].", '".pSQL($data['transaction_id'])."', '".pSQL($data['errorCode'])."')";
-        Db::getInstance()->execute($sql);
-    }
-
-    public function checkPaymentOption($params)
-    {
-        // if module disabled, can't go through
-        if (!$this->active) {
             return false;
         }
 
-        // Check if currency ok
-        if (!$this->checkCurrency($params['cart'])) {
-            return false;
-        }
-
-        // Check if module is configured
-        if (Configuration::get('PAYXPERT_ORIGINATOR') == "" && Configuration::get('PAYXPERT_PASSWORD') == "") {
-            return false;
-        }
-
-        return true;
-    }
-
-    public function hookHeader()
-    {
-        if (
-            $this->context->controller instanceof OrderController ||
-            $this->context->controller instanceof OrderOpcController
-        ) {
-            $this->context->controller->addJqueryPlugin('fancybox');
-            $this->context->controller->addJs($this->_path.'/views/js/seamless.js');
-        }
-    }
-
-    public function hookAdminOrder($params)
-    {
-        $order = new Order($params['id_order']);
-
-        if ($order->module != $this->name) {
-            return;
-        }
-        $currency = Currency::getCurrencyInstance($order->id_currency);
-        $currencySymbol = $currency->getSign();
-
-        $ajaxLink = $this->context->link->getAdminLink('AdminModules') . '&configure=' . $this->name . '&tab_module=' .
-            $this->tab . '&action=doRefund&module_name=' . $this->name;
-
-        list($orderTotal, $totalRefunded, $refundAvailable) = $this->getRefund($order);
-
-        $this->context->smarty->assign(array(
-            'pxpRefundLink' => $ajaxLink,
-            'pxpOrder' => $order,
-            'pxpOrderTotal' => $orderTotal,
-            'pxpTotalRefund' => $totalRefunded,
-            'pxpRefundAvailable' => $refundAvailable,
-            'pxpOrderCurrency' => $currency,
-            'pxpCurrencySymbol' => $currencySymbol
-        ));
-
-        return $this->display(__FILE__, '/views/templates/admin/admin_order.tpl');
-    }
-
-    public function getRefund(Order $order)
-    {
-        if (!Validate::isLoadedObject($order)) {
-            return false;
-        }
-
-        $orderTotal = $order->getTotalPaid();
-        $totalRefunded = $this->getTransactionData((int)$order->id, 'refund');
-        $refundAvailable = $orderTotal - $totalRefunded;
-
-        return array($orderTotal, $totalRefunded, $refundAvailable);
-    }
-
-    public function getTransactionData($id_order, $field = 'transaction_id')
-    {
-        return Db::getInstance()->getValue(
-            "SELECT ".pSQL($field)." FROM `" . _DB_PREFIX_ . $this->name . "_transactions` WHERE id_order = ".(int)$id_order
-        );
-    }
-
-    public function ajaxProcessDoRefund()
-    {
-        $pxAmount = str_replace(',', '.', Tools::getValue('pxpRefundAmount'));
-
-        $id_order = (int)Tools::getValue('pxpOrder');
-        $transactionID = $this->getTransactionData($id_order);
-        if (!$transactionID) {
-            die(Tools::jsonEncode(array(
-                'success' => false,
-                'msg' => $this->l('Transaction Id not found')
-            )));
-        }
-
-        $order = new Order($id_order);
-
-        list($orderTotal, $totalRefunded, $refundAvailable) = $this->getRefund($order);
-
-        if ($refundAvailable >= $pxAmount && $this->refundTransaction($transactionID, $pxAmount)) {
-            $order = new Order($id_order);
-            if ($order->getCurrentState() != Configuration::get('PS_OS_REFUND')) {
-                $order->setCurrentState(Configuration::get('PS_OS_REFUND'));
-            }
-            die(Tools::jsonEncode(array(
-                'success' => true,
-                'msg' => $this->l('Refund successful')
-            )));
-        } else {
-            die(Tools::jsonEncode(array(
-                'success' => false,
-                'msg' => $this->l('Refund could not be processed')
-            )));
-        }
-    }
-
-    public function refundTransaction($transactionID, $pxAmount)
-    {
-        $c2pClient = new PayXpert\Connect2Pay\Connect2PayClient(
-            $this->getPayXpertUrl(),
-            Configuration::get('PAYXPERT_ORIGINATOR'),
-            html_entity_decode(Configuration::get('PAYXPERT_PASSWORD'))
-        );
-
-        $pxAmount = (float)($pxAmount * 1000); // we use this trick to avoid rounding while converting to int
-        $pxAmount = (float)($pxAmount / 10); // unless sometimes 17.90 become 17.89
-        $pxAmount = (int)$pxAmount;
-
-        $response = $c2pClient->refundTransaction($transactionID, (int)($pxAmount));
-
-        if ($response && $response->getCode() == '000') {
-            return Db::getInstance()->execute(
-                "UPDATE `" . _DB_PREFIX_ . $this->name . "_transactions` SET refund = refund+" . (float)($pxAmount / 100) . ' WHERE transaction_id = '.pSQL($transactionID)
-            );
-        }
-
-        return false;
-    }
-
-    /**
-     * Hook payment options
-     *
-     * @since Prestashop 1.7
-     * @param type $params
-     * @return type
-     */
-    public function hookPaymentOptions($params)
-    {
-        if (!$this->checkPaymentOption($params)) {
-            return;
-        }
-
-        $controller = 'payment';
-
-        if ($this->isIframeMode()) {
-            $controller = 'iframe';
-        }
-
-        $this->smarty->assign($this->getTemplateVarInfos());
-
-        $payment_options = array();
-
-        $ccOption = $this->getCreditCardPaymentOption($controller);
-        if ($ccOption != null) {
-            $payment_options[] = $ccOption;
-        }
-        $sofortOption = $this->getBankTransferViaSofortPaymentOption($controller);
-        if ($sofortOption != null) {
-            $payment_options[] = $sofortOption;
-        }
-        $przelewy24Option = $this->getBankTransferViaPrzelewy24PaymentOption($controller);
-        if ($przelewy24Option != null) {
-            $payment_options[] = $przelewy24Option;
-        }
-        $idealOption = $this->getBankTransferViaIDealPaymentOption($controller);
-        if ($idealOption != null) {
-            $payment_options[] = $idealOption;
-        }
-
-        return $payment_options;
-    }
-
-    /**
-     *
-     * @since Prestashop 1.7
-     */
-    public function getCreditCardPaymentOption($controller)
-    {
-        if (Configuration::get('PAYXPERT_PAYMENT_TYPE_CREDIT_CARD') == "true") {
-            $option = new PrestaShop\PrestaShop\Core\Payment\PaymentOption();
-            $option->setModuleName($this->name);
-            $option->setCallToActionText($this->l('Pay by Credit Card'));
-            $option->setAction(
-                $this->context->link->getModuleLink(
-                    $this->name,
-                    $controller,
-                    array('payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_CREDITCARD),
-                    true
-                )
-            );
-
-            $this->context->smarty->assign(
-                'pxpCCLogo',
-                Media::getMediaPath(_PS_MODULE_DIR_ . $this->name . '/views/img/payment-types/creditcard.png')
-            );
-
-            $option->setAdditionalInformation($this->context->smarty->fetch('module:payxpert/views/templates/front/payment_infos_credit_card.tpl'));
-
-            return $option;
-        }
-
-        return null;
-    }
-
-    /**
-     *
-     * @since Prestashop 1.7
-     */
-    public function getBankTransferViaSofortPaymentOption($controller)
-    {
-        if (Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_SOFORT') == "true") {
-            $option = new PrestaShop\PrestaShop\Core\Payment\PaymentOption();
-            $option->setModuleName($this->name);
-            $option->setCallToActionText($this->l('Pay by Bank Transfer via Sofort'));
-            $option->setAction(
-                $this->context->link->getModuleLink(
-                    $this->name,
-                    $controller,
-                    array(
-                        'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER,
-                        'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_SOFORT
-                    ),
-                    true
-                )
-            );
-
-            $this->context->smarty->assign(
-                "pxpSofortLogo",
-                Media::getMediaPath(_PS_MODULE_DIR_ . $this->name . '/views/img/payment-types/sofort.png')
-            );
-
-            $option->setAdditionalInformation($this->context->smarty->fetch('module:payxpert/views/templates/front/payment_infos_bank_transfer_sofort.tpl'));
-
-            return $option;
-        }
-
-        return null;
-    }
-
-    /**
-     *
-     * @since Prestashop 1.7
-     */
-    public function getBankTransferViaPrzelewy24PaymentOption($controller)
-    {
-        if (Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_PRZELEWY24') == "true") {
-            $option = new PrestaShop\PrestaShop\Core\Payment\PaymentOption();
-            $option->setModuleName($this->name);
-            $option->setCallToActionText($this->l('Pay by Bank Transfer via Przelewy24'));
-            $option->setAction(
-                $this->context->link->getModuleLink(
-                    $this->name,
-                    $controller,
-                    array(
-                        'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER,
-                        'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_PRZELEWY24
-                    ),
-                    true
-                )
-            );
-
-            $this->context->smarty->assign(
-                "pxpPrzelewy24Logo",
-                Media::getMediaPath(_PS_MODULE_DIR_ . $this->name . '/views/img/payment-types/przelewy24.png')
-            );
-
-            $option->setAdditionalInformation($this->context->smarty->fetch('module:payxpert/views/templates/front/payment_infos_bank_transfer_przelewy24.tpl'));
-
-            return $option;
-        }
-
-        return null;
-    }
-
-    /**
-     *
-     * @since Prestashop 1.7
-     */
-    public function getBankTransferViaIDealPaymentOption($controller)
-    {
-        if (Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_IDEAL') == "true") {
-            $option = new PrestaShop\PrestaShop\Core\Payment\PaymentOption();
-            $option->setModuleName($this->name);
-            $option->setCallToActionText($this->l('Pay by Bank Transfer via iDeal'));
-            $option->setAction(
-                $this->context->link->getModuleLink(
-                    $this->name,
-                    $controller,
-                    array(
-                        'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER,
-                        'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_IDEAL
-                    ),
-                    true
-                )
-            );
-
-            $this->context->smarty->assign(
-                "pxpIdealLogo",
-                Media::getMediaPath(_PS_MODULE_DIR_ . $this->name . '/views/img/payment-types/ideal.png')
-            );
-
-            $option->setAdditionalInformation($this->context->smarty->fetch('module:payxpert/views/templates/front/payment_infos_bank_transfer_ideal.tpl'));
-
-            return $option;
-        }
-
-        return null;
-    }
-
-    public function getTemplateVarInfos()
-    {
-        $cart = $this->context->cart;
-
-        return array(/* */
-            'nbProducts' => $cart->nbProducts(), /* */
-            'cust_currency' => $cart->id_currency, /* */
-            'total' => $cart->getOrderTotal(true, Cart::BOTH), /* */
-            'isoCode' => $this->context->language->iso_code /* */
-        );
-    }
-
-    /**
-     * Hook payment for Prestashop < 1.7
-     *
-     * @param type $params
-     * @return type
-     */
-    public function hookPayment($params)
-    {
-        if (!$this->checkPaymentOption($params)) {
-            return;
-        }
-
-        $this->assignSmartyVariable(
-            'this_path',
-            $this->_path
-        );
-
-        $this->assignSmartyVariable(
-            'this_path_ssl',
-            (Configuration::get('PS_SSL_ENABLED') ? 'https://' : 'http://') . htmlspecialchars($_SERVER['HTTP_HOST'], ENT_COMPAT, 'UTF-8') .
-                 __PS_BASE_URI__ . 'modules/payxpert/'
-        );
-
-        if (version_compare(_PS_VERSION_, '1.6.0', '>=') === true) {
-            return $this->getPaymentOptions16();
-        }
-
-        $this->assignSmartyVariable(
-            'this_link',
-            $this->getModuleLinkCompat(
-                'payxpert',
-                'payment'
-            )
-        );
-
-        return $this->display(__FILE__, 'views/templates/hook/payment.tpl');
-    }
-
-    private function getPaymentOptions16($value='')
-    {
-        $controller = 'payment';
-        $payment_options = "";
-
-        if ($this->isIframeMode()) {
-            $ccOption = $this->getCreditCardPaymentOption16('iframe');
-        } else {
-            $ccOption = $this->getCreditCardPaymentOption16($controller);
-        }
-
-        if ($ccOption != null) {
-            $payment_options .= $ccOption;
-        }
-
-
-        $sofortOption = $this->getBankTransferViaSofortPaymentOption16($controller);
-        if ($sofortOption != null) {
-            $payment_options .= $sofortOption;
-        }
-        $przelewy24Option = $this->getBankTransferViaPrzelewy24PaymentOption16($controller);
-        if ($przelewy24Option != null) {
-            $payment_options .= $przelewy24Option;
-        }
-        $idealOption = $this->getBankTransferViaIDealPaymentOption16($controller);
-        if ($idealOption != null) {
-            $payment_options .= $idealOption;
-        }
-        $giropayOption = $this->getBankTransferViaGiroPayPaymentOption16($controller);
-        if ($giropayOption != null) {
-            $payment_options .= $giropayOption;
-        }
-        $weChatOption = $this->getBankTransferViaWeChatPaymentOption16($controller);
-        if ($weChatOption != null) {
-            $payment_options .= $weChatOption;
-        }
-        $alipayOption = $this->getBankTransferViaAliPayPaymentOption16($controller);
-        if ($alipayOption != null) {
-            $payment_options .= $alipayOption;
-        }
-
-        $this->context->controller->addCSS($this->_path . 'views/css/payxpert.css');
-
-        return $payment_options;
-    }
-
-    /**
-     *
-     * @since Prestashop 1.6
-     */
-    public function getCreditCardPaymentOption16($controller)
-    {
-        if (Configuration::get('PAYXPERT_PAYMENT_TYPE_CREDIT_CARD') == "true") {
-            $this->context->smarty->assign(
-                array(
-                    'payxpertLink' => $this->context->link->getModuleLink(
-                        $this->name,
-                        $controller,
-                        array(
-                            'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_CREDITCARD,
-                            'content_only' => (bool)($controller=='iframe')
-                        ),
-                        true
-                    ),
-                    'payxpertClass' => 'creditcard '.$controller,
-                    'payxpertText' => $this->l('Pay by Credit Card')
-                )
-            );
-
-            return $this->display(__FILE__, 'views/templates/hook/payment16.tpl');
-        }
-
-        return null;
-    }
-
-    /**
-     *
-     * @since Prestashop 1.6
-     */
-    public function getBankTransferViaSofortPaymentOption16($controller)
-    {
-        if (Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_SOFORT') == "true") {
-            $this->context->smarty->assign(
-                array(
-                    'payxpertLink' => $this->context->link->getModuleLink(
-                        $this->name,
-                        $controller,
-                        array(
-                            'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER,
-                            'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_SOFORT
-                        ),
-                        true
-                    ),
-                    'payxpertClass' => 'sofort type-'.$controller,
-                    'payxpertText' => $this->l('Pay by Bank Transfer via Sofort')
-                )
-            );
-
-            return $this->display(__FILE__, 'views/templates/hook/payment16.tpl');
-        }
-
-        return null;
-    }
-
-    /**
-     *
-     * @since Prestashop 1.6
-     */
-    public function getBankTransferViaPrzelewy24PaymentOption16($controller)
-    {
-        if (Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_PRZELEWY24') == "true") {
-            $this->context->smarty->assign(
-                array(
-                    'payxpertLink' => $this->context->link->getModuleLink(
-                        $this->name,
-                        $controller,
-                        array(
-                            'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER,
-                            'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_PRZELEWY24
-                        ),
-                        true
-                    ),
-                    'payxpertClass' => 'przelewy24 type-'.$controller,
-                    'payxpertText' => $this->l('Pay by Bank Transfer via Przelewy24')
-                )
-            );
-
-            return $this->display(__FILE__, 'views/templates/hook/payment16.tpl');
-        }
-
-        return null;
-    }
-
-    /**
-     *
-     * @since Prestashop 1.6
-     */
-    public function getBankTransferViaIDealPaymentOption16($controller)
-    {
-        if (Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_IDEAL') == "true") {
-            $this->context->smarty->assign(
-                array(
-                    'payxpertLink' => $this->context->link->getModuleLink(
-                        $this->name,
-                        $controller,
-                        array(
-                            'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER,
-                            'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_IDEAL
-                        ),
-                        true
-                    ),
-                    'payxpertClass' => 'ideal type-'.$controller,
-                    'payxpertText' => $this->l('Pay by Bank Transfer via iDeal')
-                )
-            );
-
-            return $this->display(__FILE__, 'views/templates/hook/payment16.tpl');
-        }
-
-        return null;
-    }
-
-    /**
-     *
-     * @since Prestashop 1.6
-     */
-    public function getBankTransferViaGiroPayPaymentOption16($controller)
-    {
-        if (Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_GIROPAY') == "true") {
-            $this->context->smarty->assign(
-                array(
-                    'payxpertLink' => $this->context->link->getModuleLink(
-                        $this->name,
-                        $controller,
-                        array(
-                            'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER,
-                            'payment_provider' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_GIROPAY
-                        ),
-                        true
-                    ),
-                    'payxpertClass' => 'giropay type-'.$controller,
-                    'payxpertText' => $this->l('Pay by Bank Transfer via Giropay')
-                )
-            );
-
-            return $this->display(__FILE__, 'views/templates/hook/payment16.tpl');
-        }
-
-        return null;
-    }
-
-    /**
-     *
-     * @since Prestashop 1.6
-     */
-    public function getBankTransferViaWeChatPaymentOption16($controller)
-    {
-        if (Configuration::get('PAYXPERT_PAYMENT_TYPE_WECHAT') == "true") {
-            $this->context->smarty->assign(
-                array(
-                    'payxpertLink' => $this->context->link->getModuleLink(
-                        $this->name,
-                        $controller,
-                        array(
-                            'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_WECHAT
-                        ),
-                        true
-                    ),
-                    'payxpertClass' => 'wechat type-'.$controller,
-                    'payxpertText' => $this->l('Pay by WeChat')
-                )
-            );
-
-            return $this->display(__FILE__, 'views/templates/hook/payment16.tpl');
-        }
-
-        return null;
-    }
-
-    /**
-     *
-     * @since Prestashop 1.6
-     */
-    public function getBankTransferViaAliPayPaymentOption16($controller)
-    {
-        if (Configuration::get('PAYXPERT_PAYMENT_TYPE_ALIPAY') == "true") {
-            $this->context->smarty->assign(
-                array(
-                    'payxpertLink' => $this->context->link->getModuleLink(
-                        $this->name,
-                        $controller,
-                        array(
-                            'payment_type' => PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_ALIPAY
-                        ),
-                        true
-                    ),
-                    'payxpertClass' => 'alipay type-'.$controller,
-                    'payxpertText' => $this->l('Pay by Bank Transfer via AliPay')
-                )
-            );
-
-            return $this->display(__FILE__, 'views/templates/hook/payment16.tpl');
-        }
-
-        return null;
-    }
-
-    /**
-     * Hook paymentReturn
-     *
-     * Displays order confirmation
-     *
-     * @param type $params
-     * @return type
-     */
-    public function hookPaymentReturn($params)
-    {
-        if (!$this->active) {
-            return;
-        }
-
-        if (isset($params['objOrder'])) {
-            // For Prestashop < 1.7
-            $order = $params['objOrder'];
-        } else {
-            $order = $params['order'];
-        }
-
-        switch ($order->getCurrentState()) {
-            case _PS_OS_PAYMENT_:
-            // Ok
-            case _PS_OS_OUTOFSTOCK_:
-                $this->assignSmartyVariable('status', 'ok');
-                break;
-
-            case _PS_OS_BANKWIRE_:
-                $this->assignSmartyVariable('status', 'pending');
-                break;
-
-            case _PS_OS_ERROR_:
-            // Error
-            default:
-                $this->assignSmartyVariable('status', 'failed');
-                break;
-        }
-
-        $this->assignSmartyVariable('this_link_contact', $this->getPageLinkCompat('contact', true));
-
-        return $this->display(__FILE__, 'views/templates/hook/orderconfirmation.tpl');
-    }
-
-    /**
-     * Init the payment
-     *
-     * In this method, we'll start to initialize the transaction
-     * And redirect the customer
-     *
-     * For Prestashop >= 1.5
-     *
-     * @global type $cookie
-     * @param Cart $cart
-     * @return type
-     */
-    public function redirect($cart, $paymentType = null, $paymentProvider = null)
-    {
-        // if module disabled, can't go through
-        if (!$this->active) {
-            return "Module is not active";
-        }
-
-        // Check if currency ok
-        if (!$this->checkCurrency($cart)) {
-            return "Incorrect currency";
-        }
-
-        // Check if module is configured
-        if (Configuration::get('PAYXPERT_ORIGINATOR') == "" && Configuration::get('PAYXPERT_PASSWORD') == "") {
-            return "Module is not setup";
-        }
-
-        if ($paymentType == null || !PayXpert\Connect2Pay\C2PValidate::isPaymentMethod($paymentType)) {
-            $paymentType = PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_CREDITCARD;
-        }
-
-        if (!$this->checkPaymentTypeAndProvider($paymentType, $paymentProvider)) {
-            return "Payment type or provider is not enabled";
-        }
-
-        $payment = $this->getPaymentClient($cart, $paymentType, $paymentProvider);
-
-        // prepare API
-        if ($payment->preparePayment() == false) {
-            $message = "PayXpert : can't prepare transaction - " . $payment->getClientErrorMessage();
-            $this->addLog($message, 3);
-            return $message;
-        }
-
-        $this->context->cookie->__set("pxpToken", $payment->getMerchantToken());
-
-        Tools::redirect($payment->getCustomerRedirectURL());
-        exit();
-    }
-
-    /**
-     * Generates the Connect2Pay payment URL
-     *
-     * For Prestashop >= 1.5
-     *
-     * @global type $cookie
-     * @param Cart $cart
-     * @return type
-     */
-    public function getPaymentClient($cart, $paymentType = null, $paymentProvider = null)
-    {
-        // get all informations
-        $customer = new Customer((int) ($cart->id_customer));
-        $currency = new Currency((int) ($cart->id_currency));
-        $carrier = new Carrier((int) ($cart->id_carrier));
-        $addr_delivery = new Address((int) ($cart->id_address_delivery));
-        $addr_invoice = new Address((int) ($cart->id_address_invoice));
-
-        $invoice_state = new State((int) ($addr_invoice->id_state));
-        $invoice_country = new Country((int) ($addr_invoice->id_country));
-
-        $delivery_state = new State((int) ($addr_delivery->id_state));
-        $delivery_country = new Country((int) ($addr_delivery->id_country));
-
-        $invoice_phone = (!empty($addr_invoice->phone)) ? $addr_invoice->phone : $addr_invoice->phone_mobile;
-        $delivery_phone = (!empty($addr_delivery->phone)) ? $addr_delivery->phone : $addr_delivery->phone_mobile;
-
-        // init api
-        $c2pClient = new PayXpert\Connect2Pay\Connect2PayClient(
-            $this->getPayXpertUrl(),
-            Configuration::get('PAYXPERT_ORIGINATOR'),
-            html_entity_decode(Configuration::get('PAYXPERT_PASSWORD'))
-        );
-
-        // customer informations
-        $c2pClient->setShopperID($cart->id_customer);
-        $c2pClient->setShopperEmail($customer->email);
-        $c2pClient->setShopperFirstName(Tools::substr($customer->firstname, 0, 35));
-        $c2pClient->setShopperLastName(Tools::substr($customer->lastname, 0, 35));
-        $c2pClient->setShopperCompany(Tools::substr($addr_invoice->company, 0, 128));
-        $c2pClient->setShopperAddress(Tools::substr(trim($addr_invoice->address1 . ' ' . $addr_invoice->address2), 0, 255));
-        $c2pClient->setShopperZipcode(Tools::substr($addr_invoice->postcode, 0, 10));
-        $c2pClient->setShopperCity(Tools::substr($addr_invoice->city, 0, 50));
-        $c2pClient->setShopperState(Tools::substr($invoice_state->name, 0, 30));
-        $c2pClient->setShopperCountryCode($invoice_country->iso_code);
-        $c2pClient->setShopperPhone(Tools::substr(trim($invoice_phone), 0, 20));
-
-        // Shipping information
-        $c2pClient->setShipToFirstName(Tools::substr($addr_delivery->firstname, 0, 35));
-        $c2pClient->setShipToLastName(Tools::substr($addr_delivery->lastname, 0, 35));
-        $c2pClient->setShipToCompany(Tools::substr($addr_delivery->company, 0, 128));
-        $c2pClient->setShipToPhone(Tools::substr(trim($delivery_phone), 0, 20));
-        $c2pClient->setShipToAddress(Tools::substr(trim($addr_delivery->address1 . " " . $addr_delivery->address2), 0, 255));
-        $c2pClient->setShipToZipcode(Tools::substr($addr_delivery->postcode, 0, 10));
-        $c2pClient->setShipToCity(Tools::substr($addr_delivery->city, 0, 50));
-        $c2pClient->setShipToState(Tools::substr($delivery_state->name, 0, 30));
-        $c2pClient->setShipToCountryCode($delivery_country->iso_code);
-        $c2pClient->setShippingName(Tools::substr($carrier->name, 0, 50));
-        $c2pClient->setShippingType(PayXpert\Connect2Pay\Connect2PayClient::SHIPPING_TYPE_PHYSICAL);
-
-        // Order informations
-        $c2pClient->setOrderID(Tools::substr(pSQL($cart->id), 0, 100));
-        $c2pClient->setOrderDescription(Tools::substr($this->l('Invoice:') . pSQL($cart->id), 0, 255));
-        $c2pClient->setCustomerIP($_SERVER['REMOTE_ADDR']);
-        $c2pClient->setCurrency($currency->iso_code);
-
-        $total = number_format($cart->getOrderTotal(true, 3) * 100, 0, '.', '');
-
-        $c2pClient->setAmount($total);
-        $c2pClient->setOrderCartContent($this->getProductsApi($cart));
-        $c2pClient->setPaymentMode(PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_MODE_SINGLE);
-        $c2pClient->setPaymentMethod($paymentType);
-        if ($paymentProvider != null && PayXpert\Connect2Pay\C2PValidate::isPaymentNetwork($paymentProvider)) {
-            $c2pClient->setPaymentNetwork($paymentProvider);
-        }
-        $c2pClient->setCtrlCustomData(PayXpert::getCallbackAuthenticityData($c2pClient->getOrderID(), $customer->secure_key));
-
-        // Merchant notifications
-        if (Configuration::get('PAYXPERT_MERCHANT_NOTIF') === "true" && Configuration::get('PAYXPERT_MERCHANT_NOTIF_TO')) {
-            $c2pClient->setMerchantNotification(true);
-            $c2pClient->setMerchantNotificationTo(Configuration::get('PAYXPERT_MERCHANT_NOTIF_TO'));
-            if (Configuration::get('PAYXPERT_MERCHANT_NOTIF_LANG')) {
-                $c2pClient->setMerchantNotificationLang(Configuration::get('PAYXPERT_MERCHANT_NOTIF_LANG'));
-            }
-        }
-
-        $ctrlURLPrefix = Configuration::get('PS_SSL_ENABLED') ? 'https://' : 'http://';
-
-        if (version_compare(_PS_VERSION_, '1.5', '<')) {
-            $c2pClient->setCtrlCallbackURL($ctrlURLPrefix . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . 'modules/payxpert/validation.php');
-            $c2pClient->setCtrlRedirectURL($ctrlURLPrefix . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . 'order-confirmation.php?id_cart=' . (int) ($cart->id) . '&id_module=' . (int) ($this->id) . '&key=' . $customer->secure_key);
-        } else {
-            $c2pClient->setCtrlCallbackURL($this->context->link->getModuleLink('payxpert', 'validation'));
-            $c2pClient->setCtrlRedirectURL($this->getModuleLinkCompat('payxpert', 'return', array('id_cart' => $cart->id)));
-        }
-
-        return $c2pClient;
-    }
-
-    /**
-     * Return array of product to fill Api Product properties
-     *
-     * @param Cart $cart
-     * @return array
-     */
-    protected function getProductsApi($cart)
-    {
-        $products = array();
-
-        foreach ($cart->getProducts() as $product) {
-            $obj = new Product((int) $product['id_product']);
-            $products[] = array( /* */
-                'CartProductId' => $product['id_product'], /* */
-                'CartProductName' => $product['name'], /* */
-                'CartProductUnitPrice' => $product['price'], /* */
-                'CartProductQuantity' => $product['quantity'], /* */
-                'CartProductBrand' => $obj->manufacturer_name, /* */
-                'CartProductMPN' => $product['ean13'], /* */
-                'CartProductCategoryName' => $product['category'], /* */
-                'CartProductCategoryID' => $product['id_category_default'] /* */
-            );
-        }
-
-        return $products;
+        return $uninstall;
     }
 
     public function getContent()
     {
-        if (Tools::isSubmit('btnSubmit')) {
-            $this->_postValidation();
+        return Tools::redirectAdmin($this->context->link->getAdminLink('AdminPayxpertConfiguration'));
+    }
 
-            if (!count($this->_postErrors)) {
-                $this->_postProcess();
+    public function getModuleDebugInfo()
+    {
+        $moduleName = $this->name;
+        $overridePath = _PS_OVERRIDE_DIR_ . 'modules/' . $moduleName . '/';
+
+        $shopID = Shop::isFeatureActive() && Shop::CONTEXT_ALL === Shop::getContext() ? 0 : Shop::getContextShopID();
+        $configuration = PayxpertConfiguration::getCurrentObject($shopID);
+        $isKeyValid = false;
+
+        $context = Context::getContext();
+        $shop = $context->shop;
+        if (Shop::CONTEXT_ALL === $shop->getContext()) {
+            $isOverriddenInTheme = $this->scanThemeOverride();
+        } else {
+            $themeName = $context->shop->theme->getName();
+            $isOverriddenInTheme = $this->scanThemeOverride($themeName);
+        }
+
+        if (Validate::isLoadedObject($configuration)) {
+            $accountInfo = Webservice::getAccountInfo($configuration->public_api_key, $configuration->private_api_key);
+            if (isset($accountInfo['name'])) {
+                $isKeyValid = true;
+            }
+        }
+
+        return [
+            '{php_version}' => PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION . '.' . PHP_RELEASE_VERSION,
+            '{cms_name}' => 'PrestaShop',
+            '{cms_version}' => _PS_VERSION_,
+            '{module_version}' => $this->version,
+            '{is_overridden_in_override}' => is_dir($overridePath),
+            '{is_overridden_in_theme}' => $isOverriddenInTheme,
+            '{is_key_valid}' => $isKeyValid,
+        ];
+    }
+
+    private function scanThemeOverride($themeName = null)
+    {
+        $isOverridden = false;
+        $themesDir = _PS_ROOT_DIR_ . '/themes/';
+        $themesToCheck = [];
+
+        if (null !== $themeName) {
+            $themesToCheck[] = $themeName;
+        } else {
+            // CONTEXT_ALL : check all themes
+            foreach (scandir($themesDir) as $entry) {
+                if ('.' === $entry || '..' === $entry) {
+                    continue;
+                }
+
+                if (is_dir($themesDir . $entry) && file_exists($themesDir . $entry . '/config/theme.yml')) {
+                    $themesToCheck[] = $entry;
+                }
+            }
+        }
+
+        foreach ($themesToCheck as $theme) {
+            $overridePath = $themesDir . $theme . '/modules/' . $this->name;
+
+            if (is_dir($overridePath)) {
+                foreach (scandir($overridePath) as $file) {
+                    if ('.' === $file || '..' === $file || 'mails' === $file) {
+                        continue;
+                    }
+                    $isOverridden = true;
+                    break 2;
+                }
+            }
+        }
+
+        return $isOverridden;
+    }
+
+    public function isUsingNewTranslationSystem()
+    {
+        return false;
+    }
+
+    public function hookActionAdminControllerSetMedia()
+    {
+        if ('AdminOrders' === Tools::getValue('controller') || 'AdminOrders' === Tools::getValue('tab')) {
+            $this->context->controller->addCss(
+                $this->_path . 'views/css/hook/display_admin_order.css',
+                'all',
+                null,
+                false
+            );
+        }
+
+        if ('AdminPayxpertTransaction' === Tools::getValue('controller')) {
+            $this->context->controller->addCss(
+                $this->_path . 'views/css/admin/transactions/index.css',
+                'all',
+                null,
+                false
+            );
+        }
+
+        if ('AdminPayxpertSubscription' === Tools::getValue('controller')) {
+            $this->context->controller->addCss(
+                $this->_path . 'views/css/admin/subscriptions/index.css',
+                'all',
+                null,
+                false
+            );
+        }
+
+        if ('AdminDashboard' === Tools::getValue('controller')) {
+            $this->context->controller->addCss(
+                $this->_path . 'views/css/hook/dashboard_zone_one.css',
+                'all',
+                null,
+                false
+            );
+
+            $this->context->controller->addJs(
+                $this->_path . 'views/js/hook/dashboard_zone_one.js'
+            );
+
+            Media::addJsDef([
+                'pxpCronConfig' => [
+                    'ajaxUrl'        => $this->context->link->getAdminLink('AdminPayxpertSubscription', true, [], ['ajax' => 1, 'action' => 'syncInstallment']),
+                    'moduleName'     => $this->name,
+                    'adminToken'     => Tools::getAdminTokenLite('AdminPayxpertSubscription'),
+                    'defaultText'    => $this->l('Synchronize installments'),
+                    'runningText'    => $this->l('Running...'),
+                ],
+            ]);
+        }
+    }
+
+    public function hookActionFrontControllerSetMedia()
+    {
+        $configuration = PayxpertConfiguration::getCurrentObject();
+
+        if (!$configuration) {
+            return false;
+        }
+
+        if (in_array($this->context->controller->php_self, ['order', 'checkout'])) {
+            Media::addJsDef([
+                'oneclick' => $configuration->oneclick,
+                'seamless' => PayxpertConfiguration::REDIRECT_MODE_SEAMLESS == $configuration->redirect_mode,
+                'applepay' => $configuration->hasPaymentMethod('Applepay'),
+                'applepay_logo_url' => Media::getMediaPath(_PS_MODULE_DIR_ . $this->name . '/views/img/payment_method_logo/applepay.png'),
+            ]);
+
+            $this->context->controller->registerJavascript(
+                'module-payxpert-checkout-js',
+                'modules/payxpert/views/js/front/checkout.js',
+                ['position' => 'bottom', 'priority' => 150]
+            );
+
+            $this->context->controller->registerJavascript(
+                'applePayJS',
+                'https://resources.sips-services.com/rsc/applepay/js/device_verification.js',
+                ['server' => 'remote', 'position' => 'head']
+            );
+
+            $this->context->controller->registerStylesheet(
+                'module-payxpert-checkout-css',
+                'modules/payxpert/views/css/front/checkout.css'
+            );
+        }
+    }
+
+    public function hookdashboardData()
+    {
+        // Installments
+        $installments = PayxpertSubscription::getNeedSynchronization();
+        $nbInstallments = count($installments);
+
+        // Cron LOGs
+        $LOGs = PayxpertCronLog::getLast();
+        $logHTML = $LOGs ? Utils::buildDashboardTaskExecutorHTML($LOGs, $this) : $this->l('No Task');
+        
+        return array(
+            'data_value' => array(
+                'payxpert_pending_installments' => $nbInstallments > 0 ? ('⚠️' . $nbInstallments) : '✔️',
+                'payxpert_cron_logs' => $logHTML,
+            )
+        );
+    }
+
+    public function hookDashboardZoneOne()
+    {
+        return $this->display(__FILE__, 'views/templates/hook/dashboard_zone_one/information_block.tpl');
+    }
+
+    
+    public function hookDisplayAdminOrder($params)
+    {
+        $order = new Order((int) $params['id_order']);
+
+        if ($order->module != $this->name) {
+            return;
+        }
+
+        $messages = [];
+        $payByLinkSent = false;
+        $configuration = PayxpertConfiguration::getCurrentObject($order->id_shop);
+
+        if (Tools::isSubmit('submitAddRefund')) {
+            $orderSlipID = Tools::getValue('order_slip_id');
+            $transactionID = Tools::getValue('transaction_id');
+
+            // Check $data validity
+            try {
+                if (false == $orderSlipID) {
+                    throw new Exception($this->l('Order Slip ID not found.'));
+                }
+
+                if (false == $transactionID) {
+                    throw new Exception($this->l('Transaction ID not found.'));
+                }
+
+                $orderSlip = new OrderSlip($orderSlipID);
+                if (!Validate::isLoadedObject($orderSlip)) {
+                    throw new Exception($this->l('Order Slip not found.'));
+                }
+
+                $transaction = new PayxpertPaymentTransaction($transactionID);
+
+                if (!Validate::isLoadedObject($transaction)) {
+                    throw new Exception($this->l('Transaction not found.'));
+                }
+
+                if (!in_array($transaction->operation, [PayxpertPaymentTransaction::OPERATION_SALE, PayxpertPaymentTransaction::OPERATION_CAPTURE])) {
+                    throw new Exception($this->l('Transaction operation must be `sale` or `capture`.'));
+                }
+                $orderSlipAmount = (int) Tools::ps_round($orderSlip->amount * 100, 0, PS_ROUND_UP);
+                $transactionAmount = (int) Tools::ps_round($transaction->amount * 100);
+                $transactionsLinked = PayxpertPaymentTransaction::getByReferalTransactionIdAndResultCode(
+                    $transaction->transaction_id,
+                    PayxpertPaymentTransaction::RESULT_CODE_SUCCESS
+                );
+
+                $amountAlreadyRefunded = 0;
+                if ($transactionsLinked) {
+                    $amountAlreadyRefunded = array_sum(array_map(function ($t) {
+                        return $t['amount'] * 100;
+                    }, $transactionsLinked));
+                }
+
+                $refundableAmount = $transactionAmount - $amountAlreadyRefunded;
+                $amountToRefund = min($orderSlipAmount, $refundableAmount);
+                $refundResult = Webservice::refundTransaction($configuration, $transaction->transaction_id, $amountToRefund);
+
+                if (isset($refundResult['error'])) {
+                    Logger::critical($refundResult['error']);
+                    throw new Exception($this->l('An error occured during the refund process : ') . $refundResult['error']);
+                }
+
+                if (PayxpertPaymentTransaction::RESULT_CODE_SUCCESS !== $refundResult['code']) {
+                    Logger::critical($refundResult['message']);
+                    throw new Exception($this->l('An error occured during the refund process : ') . $refundResult['message']);
+                }
+
+                $transactionInfo = Webservice::getTransactionInfo($configuration, $refundResult['transaction_id']);
+
+                $payxpertPaymentTransaction = new PayxpertPaymentTransaction();
+                $payxpertPaymentTransaction->hydrate($transactionInfo);
+                $payxpertPaymentTransaction->id_shop = $order->id_shop;
+                $payxpertPaymentTransaction->order_id = $order->id;
+                $payxpertPaymentTransaction->order_slip_id = $orderSlip->id;
+                $payxpertPaymentTransaction->transaction_referal_id = $transaction->transaction_id;
+                $payxpertPaymentTransaction->save();
+
+                if ($amountToRefund == $refundableAmount) {
+                    $history = new OrderHistory();
+                    $history->id_order = $order->id;
+                    $history->changeIdOrderState(_PS_OS_REFUND_, $order->id);
+                    $history->add();
+                }
+
+                $messages[] = ['type' => 'success', 'msg' => $this->l('Refund succeed.')];
+            } catch (Exception $e) {
+                $messages[] = ['type' => 'danger', 'msg' => $e->getMessage()];
+            }
+        }
+
+        if (Tools::isSubmit('submitAddCapture')) {
+            try {
+                $transaction_id = Tools::getValue('id_payxpert_payment_transaction');
+                $transaction = new PayxpertPaymentTransaction((int) $transaction_id);
+
+                if (!Validate::isLoadedObject($transaction)) {
+                    throw new Exception($this->l('Transaction not found.'));
+                }
+
+                if (PayxpertPaymentTransaction::OPERATION_AUTHORIZE != $transaction->operation) {
+                    throw new Exception($this->l('Transaction operation must be `authorize`'));
+                }
+
+                $hasAtransactionLinked = PayxpertPaymentTransaction::isExistByTransactionReferalId($transaction->transaction_id);
+                if ($hasAtransactionLinked) {
+                    throw new Exception($this->l('A capture transaction already exist for this transaction ID.'));
+                }
+
+                $captureInfo = Webservice::captureTransaction(
+                    $configuration,
+                    $transaction->transaction_id,
+                    (int) Tools::ps_round($transaction->amount * 100)
+                );
+
+                if (isset($captureInfo['error'])) {
+                    Logger::critical($captureInfo['error']);
+                    throw new Exception($this->l('An error occured during the capture process : ') . $captureInfo['error']);
+                }
+
+                if (PayxpertPaymentTransaction::RESULT_CODE_SUCCESS !== $captureInfo['code']) {
+                    Logger::critical($captureInfo['message']);
+                    throw new Exception($this->l('An error occured during the capture process : ') . $captureInfo['message']);
+                }
+
+                $transactionInfo = Webservice::getTransactionInfo($configuration, $captureInfo['transaction_id']);
+                $payxpertPaymentTransaction = new PayxpertPaymentTransaction();
+                $payxpertPaymentTransaction->hydrate($transactionInfo);
+                $payxpertPaymentTransaction->id_shop = $order->id_shop;
+                $payxpertPaymentTransaction->order_id = $order->id;
+                $payxpertPaymentTransaction->transaction_referal_id = $transaction->transaction_id;
+                $payxpertPaymentTransaction->save();
+
+                $history = new OrderHistory();
+                $history->id_order = $order->id;
+                $history->changeIdOrderState(_PS_OS_PAYMENT_, $order->id, true);
+                $history->add();
+
+                $messages[] = ['type' => 'success', 'msg' => $this->l('Capture succeed.')];
+            } catch (Exception $e) {
+                $messages[] = ['type' => 'danger', 'msg' => $e->getMessage()];
+            }
+        }
+
+        $osWaitingPaybylink = Configuration::getGlobalValue('OS_PAYXPERT_WAITING_PAYBYLINK') == $order->current_state;
+        $isPayByLinkEnable = $configuration->paybylink;
+        $minAmountOK = $configuration->instalment_payment_min_amount < $order->total_paid;
+        $instalmentOK = $minAmountOK && $isPayByLinkEnable && $osWaitingPaybylink;
+
+        $configurationPaymentMethods = $configuration->getConfigurationPaymentMethods();
+        $instalmentPaymentAvailable = [];
+        foreach ($configurationPaymentMethods as $configurationPaymentMethod) {
+            if (!$configurationPaymentMethod->active) {
+                continue;
+            }
+
+            $paymentMethod = new PayxpertPaymentMethod($configurationPaymentMethod->payment_method_id);
+            $paymentMethodConfig = json_decode($paymentMethod->config, true);
+
+            if (isset($paymentMethodConfig['payment_mode']) && PaymentMode::INSTALMENTS == $paymentMethodConfig['payment_mode']) {
+                $instalmentPaymentAvailable[$configurationPaymentMethod->payment_method_id] = $paymentMethodConfig;
+
+                if ($instalmentOK) {
+                    $this->context->smarty->assign($paymentMethodConfig['instalment_configuration'], $configurationPaymentMethod->payment_method_id);
+                }
+            }
+        }
+
+        if ($order->current_state == Configuration::getGlobalValue('OS_PAYXPERT_WAITING_PAYBYLINK')) {
+            // Check if mail has not already be sent
+            $payByLinkSent = PayxpertPaymentToken::existsRecentPaybylinkForIdCart($order->id_cart, true);
+        }
+
+        if (Tools::isSubmit('submitAddPaybylink')) {
+            try {
+                if ($payByLinkSent) {
+                    throw new Exception($this->l('An email has already be sent for this order'));
+                }
+
+                if (!$osWaitingPaybylink) {
+                    throw new Exception($this->l('The order status must be `Waiting for paybylink payment (PayXpert)`'));
+                }
+
+                $paymentMethodId = Tools::getValue('payxpert_payment_method');
+                $paymentMode = PaymentMode::SINGLE;
+                $instalmentParameters = [];
+                if (isset($instalmentPaymentAvailable[$paymentMethodId])) {
+                    $instalmentParameters = isset($instalmentPaymentAvailable[$paymentMethodId]['instalment_configuration']) ? [
+                        'firstPercentage' => $configuration->{$instalmentPaymentAvailable[$paymentMethodId]['instalment_configuration']},
+                        'xTimes' => $instalmentPaymentAvailable[$paymentMethodId]['instalment_x_times'],
+                    ] : [];
+                    $paymentMode = $instalmentPaymentAvailable[$paymentMethodId]['payment_mode'];
+                }
+
+                $preparedPayment = Webservice::preparePayment(
+                    $configuration,
+                    PaymentMethod::CREDIT_CARD,
+                    new Cart($order->id_cart),
+                    $paymentMode,
+                    $instalmentParameters,
+                    true
+                );
+
+                if (isset($preparedPayment['error'])) {
+                    throw new Exception($preparedPayment['error']);
+                }
+
+                $orderCustomer = new Customer($order->id_customer);
+                $deadline = new DateTime($order->date_add);
+                $deadline->modify('+30 days');
+
+                $mailSent = Mail::Send(
+                    (int) $this->context->language->id,
+                    'pay_by_link',
+                    'PAYBYLINK Subject',
+                    [
+                        '{firstname}' => $orderCustomer->firstname,
+                        '{lastname}' => $orderCustomer->lastname,
+                        '{shop_name}' => Configuration::get('PS_SHOP_NAME'),
+                        '{order_reference}' => $order->reference,
+                        '{payment_link}' => $preparedPayment['redirectUrl'],
+                        '{order_date}' => $order->date_add,
+                        '{order_products}' => Utils::generateOrderProductsHTML($order),
+                        '{order_subtotal}' => Tools::displayPrice($order->total_products_wt),
+                        '{order_shipping}' => Tools::displayPrice($order->total_shipping_tax_incl),
+                        '{order_total}' => Tools::displayPrice($order->total_paid),
+                        '{payment_deadline}' => $deadline->format('Y-m-d H:i:s'),
+                        '{shop_url}' => $this->context->shop->getBaseURL(),
+                    ],
+                    $orderCustomer->email,
+                    $orderCustomer->lastname . ' ' . $orderCustomer->firstname,
+                    null,
+                    null,
+                    null,
+                    null,
+                    _PS_MODULE_DIR_ . 'payxpert/mails/'
+                );
+
+                if (!$mailSent) {
+                    // If failure, delete the paymentToken so we don't forbide further retry
+                    $preparedPayment['paymentToken']->delete();
+                    throw new Exception($this->l('Failed to send the paybylink email. Please try again.'));
+                }
+
+                $payByLinkSent = true;
+                $messages[] = ['type' => 'success', 'msg' => $this->l('The paybylink email has been sent to the customer')];
+            } catch (Exception $e) {
+                $messages[] = ['type' => 'danger', 'msg' => $e->getMessage()];
+            }
+        }
+
+        $transactions = PayxpertPaymentTransaction::getAllByOrderId($order->id);
+        $iterationsLeft = null;
+        $needSync = false;
+
+        if (!empty($transactions)) {
+            if ($transactions[0]['subscription_id'] != null) {
+                $subscriptionInfo = Webservice::getStatusSubscription($configuration, $transactions[0]['subscription_id']);
+                if (!isset($subscriptionInfo['error'])) {
+                    $iterationsLeft = $subscriptionInfo['subscription']['iterationsLeft'];
+                    $needSync = (count($subscriptionInfo['transactionList']) - count($transactions)) > 0;
+                }
+            }
+        }
+
+        if ($needSync) {
+            if (empty($transactions)) {
+                $messages[] = ['type' => 'danger', 'msg' => $this->l('No transaction found')];
             } else {
-                foreach ($this->_postErrors as $err) {
-                    $this->_html .= $this->displayError($err);
-                }
-            }
-        } else {
-            $this->_html .= '<br />';
-        }
-
-        $this->_html .= $this->display(__FILE__, '/views/templates/admin/infos.tpl');
-
-        if (version_compare(_PS_VERSION_, '1.6', '<')) {
-            /* Prestashop parameter names must not exceed 32 chars for v < 1.6 */
-            $this->assignSmartyVariable(
-                'PAYXPERT_ORIGINATOR',
-                Tools::safeOutput(Tools::getValue(
-                    'PAYXPERT_ORIGINATOR',
-                    Configuration::get('PAYXPERT_ORIGINATOR')
-                ))
-            );
-
-            $this->assignSmartyVariable(
-                'PAYXPERT_URL',
-                Tools::safeOutput(Tools::getValue(
-                    'PAYXPERT_URL',
-                    Configuration::get('PAYXPERT_URL')
-                ))
-            );
-
-            $merchantNotifications = (Configuration::get('PAYXPERT_MERCHANT_NOTIF') == "true") ? "true" : "false";
-            if (Tools::getValue('PAYXPERT_MERCHANT_NOTIF')) {
-                $merchantNotifications = (in_array(Tools::getValue('PAYXPERT_MERCHANT_NOTIF'), array("true", "1", "on"))) ? "true" : "false";
-            }
-
-            $this->assignSmartyVariable(
-                'PAYXPERT_MERCHANT_NOTIF',
-                $merchantNotifications
-            );
-
-            $this->assignSmartyVariable(
-                'PAYXPERT_MERCHANT_NOTIF_TO',
-                Tools::safeOutput(Tools::getValue(
-                    'PAYXPERT_MERCHANT_NOTIF_TO',
-                    Configuration::get('PAYXPERT_MERCHANT_NOTIF_TO')
-                ))
-            );
-
-            $this->assignSmartyVariable(
-                'PAYXPERT_MERCHANT_NOTIF_LANG',
-                Tools::safeOutput(Tools::getValue(
-                    'PAYXPERT_MERCHANT_NOTIF_LANG',
-                    Configuration::get('PAYXPERT_MERCHANT_NOTIF_LANG')
-                ))
-            );
-
-            $this->_html .= $this->display(
-                __FILE__,
-                '/views/templates/admin/config.tpl'
-            );
-        } else {
-            $this->_html .= $this->renderForm();
-        }
-
-        return $this->_html;
-    }
-
-    public function getConfigFieldsValues()
-    {
-        // Handle checkboxes
-        $merchantNotif = Tools::getValue('PAYXPERT_MERCHANT_NOTIF', Configuration::get('PAYXPERT_MERCHANT_NOTIF'));
-
-        $result = array( /* */
-            'PAYXPERT_ORIGINATOR' => Tools::getValue('PAYXPERT_ORIGINATOR', Configuration::get('PAYXPERT_ORIGINATOR')), /* */
-            'PAYXPERT_URL' => Tools::getValue('PAYXPERT_URL', Configuration::get('PAYXPERT_URL')), /* */
-            'PAYXPERT_MERCHANT_NOTIF' => ($merchantNotif === "true" || $merchantNotif == 1) ? 1 : 0, /* */
-            'PAYXPERT_MERCHANT_NOTIF_TO' => Tools::getValue(
-                'PAYXPERT_MERCHANT_NOTIF_TO',
-                Configuration::get('PAYXPERT_MERCHANT_NOTIF_TO')
-            ),
-            'PAYXPERT_MERCHANT_NOTIF_LANG' => Tools::getValue(
-                'PAYXPERT_MERCHANT_NOTIF_LANG',
-                Configuration::get('PAYXPERT_MERCHANT_NOTIF_LANG')
-            ),
-        );
-
-        if (version_compare(_PS_VERSION_, '1.6', '>=')) {
-            $creditCardPaymentType = Tools::getValue(
-                'PAYXPERT_PAYMENT_TYPE_CREDIT_CARD',
-                Configuration::get('PAYXPERT_PAYMENT_TYPE_CREDIT_CARD')
-            );
-
-            $sofortPaymentType = Tools::getValue(
-                'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_SOFORT',
-                Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_SOFORT')
-            );
-
-            $przelewy24PaymentType = Tools::getValue(
-                'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_PRZELEWY24',
-                Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_PRZELEWY24')
-            );
-
-            $idealPaymentType = Tools::getValue(
-                'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_IDEAL',
-                Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_IDEAL')
-            );
-
-            $isIframe = Tools::getValue(
-                'PAYXPERT_IS_IFRAME',
-                Configuration::get('PAYXPERT_IS_IFRAME')
-            );
-
-            $result['PAYXPERT_PAYMENT_TYPE_CREDIT_CARD'] = ($creditCardPaymentType === "true" || $creditCardPaymentType == 1) ? 1 : 0;
-            $result['PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_SOFORT'] = ($sofortPaymentType === "true" || $sofortPaymentType == 1) ? 1 : 0;
-            $result['PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_PRZELEWY24'] = ($przelewy24PaymentType === "true" || $przelewy24PaymentType == 1) ? 1 : 0;
-            $result['PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_IDEAL'] = ($idealPaymentType === "true" || $idealPaymentType == 1) ? 1 : 0;
-            $result['PAYXPERT_IS_IFRAME'] = ($isIframe === "true" || $isIframe == 1) ? 1 : 0;
-        }
-
-        if (version_compare(_PS_VERSION_, '1.6', '>=') && version_compare(_PS_VERSION_, '1.7', '<')) {
-            $weChatPaymentType = Tools::getValue(
-                'PAYXPERT_PAYMENT_TYPE_WECHAT',
-                Configuration::get('PAYXPERT_PAYMENT_TYPE_WECHAT')
-            );
-
-            $giropayPaymentType = Tools::getValue(
-                'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_GIROPAY',
-                Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_GIROPAY')
-            );
-
-            $alipayPaymentType = Tools::getValue(
-                'PAYXPERT_PAYMENT_TYPE_ALIPAY',
-                Configuration::get('PAYXPERT_PAYMENT_TYPE_ALIPAY')
-            );
-
-            $result['PAYXPERT_PAYMENT_TYPE_WECHAT'] = ($weChatPaymentType === "true" || $weChatPaymentType == 1) ? 1 : 0;
-            $result['PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_GIROPAY'] = ($giropayPaymentType === "true" || $giropayPaymentType == 1) ? 1 : 0;
-            $result['PAYXPERT_PAYMENT_TYPE_ALIPAY'] = ($alipayPaymentType === "true" || $alipayPaymentType == 1) ? 1 : 0;
-        }
-
-        return $result;
-    }
-
-    public function renderForm()
-    {
-        $fields_form = array(
-            'form' => array( /* */
-                'legend' => array( /* */
-                    'title' => $this->l('Settings'), /* */
-                    'icon' => 'icon-gears' /* */
-                ), /* */
-                'input' => array( /* */
-                    array( /* */
-                        'type' => 'text', /* */
-                        'name' => 'PAYXPERT_ORIGINATOR', /* */
-                        'label' => $this->l('Originator ID'), /* */
-                        'desc' => $this->l('The identifier of your Originator'), /* */
-                        'required' => true /* */
-                    ),
-                    array( /* */
-                        'type' => 'password', /* */
-                        'name' => 'PAYXPERT_PASSWORD', /* */
-                        'label' => $this->l('Originator password'), /* */
-                        'desc' => $this->l('The password associated with your Originator (leave empty to keep the current one)'), /* */
-                        'hint' => $this->l('Leave empty to keep the current one'), /* */
-                        'required' => false /* */
-                    ),
-                    array( /* */
-                        'type' => 'text', /* */
-                        'name' => 'PAYXPERT_URL', /* */
-                        'label' => $this->l('Payment Page URL'), /* */
-                        'desc' => $this->l('Leave this field empty unless you have been given an URL'), /* */
-                        'required' => false /* */
-                    ),
-                    array( /* */
-                        'type' => 'switch', /* */
-                        'name' => 'PAYXPERT_MERCHANT_NOTIF', /* */
-                        'label' => $this->l('Merchant notifications'), /* */
-                        'desc' => $this->l('Whether or not to send a notification to the merchant for each processed payment'), /* */
-                        'required' => false, /* */
-                        'is_bool' => true, /* */
-                        'values' => array( /* */
-                            array('id' => 'notif_on', 'value' => 1, 'label' => $this->l('Enabled')), /* */
-                            array('id' => 'notif_off', 'value' => 0, 'label' => $this->l('Disabled')) /* */
-                        ) /* */
-                    ),  /* */
-                    array( /* */
-                        'type' => 'text', /* */
-                        'name' => 'PAYXPERT_MERCHANT_NOTIF_TO', /* */
-                        'label' => $this->l('Merchant notifications recipient'), /* */
-                        'desc' => $this->l('Recipient email address for merchant notifications'), /* */
-                        'required' => false, /* */
-                         'size' => 100 /* */
-                    ), /* */
-                    array( /* */
-                        'type' => 'select', /* */
-                        'name' => 'PAYXPERT_MERCHANT_NOTIF_LANG', /* */
-                        'label' => $this->l('Merchant notifications lang'), /* */
-                        'desc' => $this->l('Language to use for merchant notifications'), /* */
-                        'required' => false, /* */
-                        'options' => array( /* */
-                            'query' => array( /* */
-                                array('id_option' => 'en', 'name' => $this->l('English')), /* */
-                                array('id_option' => 'fr', 'name' => $this->l('French')), /* */
-                                array('id_option' => 'es', 'name' => $this->l('Spanish')), /* */
-                                array('id_option' => 'it', 'name' => $this->l('Italian')) /* */
-                            ), /* */
-                            'id' => 'id_option', /* */
-                            'name' => 'name' /* */
-                        ) /* */
-                    )
-                ), /* */
-                'submit' => array('title' => $this->l('Update settings')) /* */
-            ) /* */
-        );
-
-        if (version_compare(_PS_VERSION_, '1.6', '>=') && version_compare(_PS_VERSION_, '1.7', '<')) {
-            $fields_form['form']['input'][] = array( /* */
-                'type' => 'switch', /* */
-                'name' => 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_GIROPAY', /* */
-                'label' => $this->l('Bank Transfer via Giropay'), /* */
-                'desc' => $this->l('Enable payment type: Bank Transfer via Giropay'), /* */
-                'required' => false, /* */
-                'is_bool' => true, /* */
-                'values' => array(/* */
-                    array('id' => 'giropay_on', 'value' => 1, 'label' => $this->l('Enabled')), /* */
-                    array('id' => 'giropay_off', 'value' => 0, 'label' => $this->l('Disabled')) /* */
-                ) /* */
-            );
-            $fields_form['form']['input'][] = array( /* */
-                'type' => 'switch', /* */
-                'name' => 'PAYXPERT_PAYMENT_TYPE_WECHAT', /* */
-                'label' => $this->l('WeChat Pay'), /* */
-                'desc' => $this->l('Enable payment type: WeChat Pay'), /* */
-                'required' => false, /* */
-                'is_bool' => true, /* */
-                'values' => array(/* */
-                    array('id' => 'wechat_on', 'value' => 1, 'label' => $this->l('Enabled')), /* */
-                    array('id' => 'wechat_off', 'value' => 0, 'label' => $this->l('Disabled')) /* */
-                ) /* */
-            );
-            $fields_form['form']['input'][] = array( /* */
-                'type' => 'switch', /* */
-                'name' => 'PAYXPERT_PAYMENT_TYPE_ALIPAY', /* */
-                'label' => $this->l('Alipay'), /* */
-                'desc' => $this->l('Enable payment type: Alipay'), /* */
-                'required' => false, /* */
-                'is_bool' => true, /* */
-                'values' => array(/* */
-                    array('id' => 'alipay_on', 'value' => 1, 'label' => $this->l('Enabled')), /* */
-                    array('id' => 'alipay_off', 'value' => 0, 'label' => $this->l('Disabled')) /* */
-                ) /* */
-            );
-        }
-
-        if (version_compare(_PS_VERSION_, '1.6', '>=')) {
-            $fields_form['form']['input'][] = array( /* */
-                'type' => 'switch', /* */
-                'name' => 'PAYXPERT_PAYMENT_TYPE_CREDIT_CARD', /* */
-                'label' => $this->l('Credit Card'), /* */
-                'desc' => $this->l('Enable payment type: Credit Card'), /* */
-                'required' => false, /* */
-                'is_bool' => true, /* */
-                'values' => array(/* */
-                    array('id' => 'cc_on', 'value' => 1, 'label' => $this->l('Enabled')), /* */
-                    array('id' => 'cc_off', 'value' => 0, 'label' => $this->l('Disabled')) /* */
-                ) /* */
-            );
-            $fields_form['form']['input'][] = array( /* */
-                'type' => 'switch', /* */
-                'name' => 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_SOFORT', /* */
-                'label' => $this->l('Bank Transfer via Sofort'), /* */
-                'desc' => $this->l('Enable payment type: Bank Transfer via Sofort'), /* */
-                'required' => false, /* */
-                'is_bool' => true, /* */
-                'values' => array(/* */
-                    array('id' => 'sofort_on', 'value' => 1, 'label' => $this->l('Enabled')), /* */
-                    array('id' => 'sofort_off', 'value' => 0, 'label' => $this->l('Disabled')) /* */
-                ) /* */
-            );
-            $fields_form['form']['input'][] = array( /* */
-                'type' => 'switch', /* */
-                'name' => 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_PRZELEWY24', /* */
-                'label' => $this->l('Bank Transfer via Przelewy24'), /* */
-                'desc' => $this->l('Enable payment type: Bank Transfer via Przelewy24'), /* */
-                'required' => false, /* */
-                'is_bool' => true, /* */
-                'values' => array(/* */
-                    array('id' => 'przelewy24_on', 'value' => 1, 'label' => $this->l('Enabled')), /* */
-                    array('id' => 'przelewy24_off', 'value' => 0, 'label' => $this->l('Disabled')) /* */
-                ) /* */
-            );
-            $fields_form['form']['input'][] = array( /* */
-                'type' => 'switch', /* */
-                'name' => 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_IDEAL', /* */
-                'label' => $this->l('Bank Transfer via iDeal'), /* */
-                'desc' => $this->l('Enable payment type: Bank Transfer via iDeal'), /* */
-                'required' => false, /* */
-                'is_bool' => true, /* */
-                'values' => array(/* */
-                    array('id' => 'ideal_on', 'value' => 1, 'label' => $this->l('Enabled')), /* */
-                    array('id' => 'ideal_off', 'value' => 0, 'label' => $this->l('Disabled')) /* */
-                ) /* */
-            );
-            $iframeLabel = $this->l('Iframe mode');
-            $iframeDesc = $this->l('Enable iframe mode');
-            if (version_compare(_PS_VERSION_, '1.7', '<')) {
-                $iframeLabel = $this->l('Seamless mode');
-                $iframeDesc = $this->l('Enable seamless mode');
-            }
-
-            $fields_form['form']['input'][] = array( /* */
-                'type' => 'switch', /* */
-                'name' => 'PAYXPERT_IS_IFRAME', /* */
-                'label' => $iframeLabel, /* */
-                'desc' => $iframeDesc, /* */
-                'required' => false, /* */
-                'is_bool' => true, /* */
-                'values' => array(/* */
-                    array('id' => 'iframe_on', 'value' => 1, 'label' => $this->l('Enabled')), /* */
-                    array('id' => 'iframe_off', 'value' => 0, 'label' => $this->l('Disabled')) /* */
-                ) /* */
-            );
-        }
-
-        $helper = new HelperForm();
-        $helper->show_toolbar = false;
-        $helper->table = $this->table;
-        $lang = new Language((int) Configuration::get('PS_LANG_DEFAULT'));
-        $helper->default_form_language = $lang->id;
-        $helper->allow_employee_form_lang = Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') ? Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') : 0;
-        $this->fields_form = array();
-
-        $helper->identifier = $this->identifier;
-        $helper->submit_action = 'btnSubmit';
-        $helper->currentIndex = $this->context->link->getAdminLink('AdminModules', false) . '&configure=' . $this->name . '&tab_module=' .
-            $this->tab . '&module_name=' . $this->name;
-        $helper->token = Tools::getAdminTokenLite('AdminModules');
-        $helper->tpl_vars = array( /* */
-            'fields_value' => $this->getConfigFieldsValues(), /* */
-            'languages' => $this->context->controller->getLanguages(), /* */
-            'id_language' => $this->context->language->id /* */
-        );
-
-        return $helper->generateForm(array($fields_form));
-    }
-
-    private function _postValidation()
-    {
-        if (Tools::isSubmit('btnSubmit')) {
-            if (!Tools::getValue('PAYXPERT_ORIGINATOR')) {
-                $this->_postErrors[] = $this->l('Originator is required.');
-            }
-
-            if (!Configuration::get('PAYXPERT_PASSWORD') && !Tools::getValue('PAYXPERT_PASSWORD')) {
-                $this->_postErrors[] = $this->l('Password is required.');
-            }
-
-            if (in_array(Tools::getValue('PAYXPERT_MERCHANT_NOTIF'), array("true", "1", "on")) && !Tools::getValue('PAYXPERT_MERCHANT_NOTIF_TO')) {
-                $this->_postErrors[] = $this->l('Merchant notifications recipient is required.');
-            }
-
-            if (Tools::getValue('PAYXPERT_MERCHANT_NOTIF_TO') && !Validate::isEmail(Tools::getValue('PAYXPERT_MERCHANT_NOTIF_TO'))) {
-                $this->_postErrors[] = $this->l('Merchant notifications recipient must be a valid email address.');
-            }
-
-            if (!in_array(Tools::getValue('PAYXPERT_MERCHANT_NOTIF_LANG'), array("en", "fr", "es", "it"))) {
-                $this->_postErrors[] = $this->l('Merchant notification lang is not valid.');
-            }
-        }
-    }
-
-    protected function _postProcess()
-    {
-        if (Tools::isSubmit('btnSubmit')) {
-            Configuration::updateValue('PAYXPERT_ORIGINATOR', Tools::getValue('PAYXPERT_ORIGINATOR'));
-
-            if (Tools::getValue('PAYXPERT_PASSWORD')) {
-                // Manually handle HTML special chars to avoid losing them
-                Configuration::updateValue('PAYXPERT_PASSWORD', htmlentities(Tools::getValue('PAYXPERT_PASSWORD')));
-            }
-
-            Configuration::updateValue('PAYXPERT_URL', Tools::getValue('PAYXPERT_URL'));
-
-            Configuration::updateValue('PAYXPERT_MERCHANT_NOTIF_TO', Tools::getValue('PAYXPERT_MERCHANT_NOTIF_TO'));
-
-            if (in_array(Tools::getValue('PAYXPERT_MERCHANT_NOTIF_LANG'), array("en", "fr", "es", "it"))) {
-                Configuration::updateValue('PAYXPERT_MERCHANT_NOTIF_LANG', Tools::getValue('PAYXPERT_MERCHANT_NOTIF_LANG'));
-            }
-
-            // Handle checkboxes
-            $checkboxes = array( /* */
-                'PAYXPERT_MERCHANT_NOTIF' /* */
-            );
-            if (version_compare(_PS_VERSION_, '1.6', '>=')) {
-                $checkboxes[] = 'PAYXPERT_PAYMENT_TYPE_CREDIT_CARD';
-                $checkboxes[] = 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_SOFORT';
-                $checkboxes[] = 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_PRZELEWY24';
-                $checkboxes[] = 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_IDEAL';
-                $checkboxes[] = 'PAYXPERT_IS_IFRAME';
-            }
-
-            if (version_compare(_PS_VERSION_, '1.6', '>=') && version_compare(_PS_VERSION_, '1.7', '<')) {
-                $checkboxes[] = 'PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_GIROPAY';
-                $checkboxes[] = 'PAYXPERT_PAYMENT_TYPE_WECHAT';
-                $checkboxes[] = 'PAYXPERT_PAYMENT_TYPE_ALIPAY';
-            }
-
-            foreach ($checkboxes as $checkbox) {
-                if (in_array(Tools::getValue($checkbox), array("true", "1", "on"))) {
-                    Configuration::updateValue($checkbox, "true");
+                if (!isset($subscriptionInfo)) {
+                    $messages[] = ['type' => 'danger', 'msg' => $this->l('Initial transaction is not an installment payment')];
                 } else {
-                    Configuration::updateValue($checkbox, "false");
-                }
-            }
-        }
-
-        if (version_compare(_PS_VERSION_, '1.6', '>=')) {
-            $this->_html .= $this->displayConfirmation($this->l('Configuration updated'));
-        } else {
-            $this->_html .= '<span class="conf confirm"> ' . $this->l('Configuration updated') . '</span>';
-
-            return true;
-        }
-    }
-
-    private function checkPaymentTypeAndProvider($paymentType, $paymentProvider)
-    {
-        // For Prestashop >=1.7, check that the payment type is enabled
-        if (version_compare(_PS_VERSION_, '1.7.0', '>=') === true) {
-            switch ($paymentType) {
-                case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_CREDITCARD:
-                    return Configuration::get('PAYXPERT_PAYMENT_TYPE_CREDIT_CARD') === "true";
-                case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER:
-                    if ($paymentProvider !== null) {
-                        switch ($paymentProvider) {
-                            case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_SOFORT:
-                                return Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_SOFORT') === "true";
-                            case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_PRZELEWY24:
-                                return Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_PRZELEWY24') === "true";
-                            case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_IDEAL:
-                                return Configuration::get('PAYXPERT_PAYMENT_TYPE_BANK_TRANSFER_IDEAL') === "true";
+                    if (isset($subscriptionInfo['error'])) {
+                        $messages[] = ['type' => 'danger', 'msg' => $subscriptionInfo['error']];
+                    } else {
+                        if (Utils::syncSubscription($subscriptionInfo, $transactions[0])) {
+                            $messages[] = ['type' => 'info', 'msg' => $this->l('Installment payments for this order have been synchronized')];
+                            // Reset $transactions
+                            $transactions = PayxpertPaymentTransaction::getAllByOrderId($order->id);
                         }
                     }
-                    break;
-            }
-        } else {
-            return true;
-        }
-
-        return false;
-    }
-
-    private function checkCurrency($cart)
-    {
-        $currency_order = new Currency((int) ($cart->id_currency));
-        $currencies_module = $this->getCurrency((int) $cart->id_currency);
-
-        if (is_array($currencies_module)) {
-            foreach ($currencies_module as $currency_module) {
-                if ($currency_order->id == $currency_module['id_currency']) {
-                    return true;
                 }
             }
         }
 
-        return false;
-    }
+        $orderTransactionsFormatted = Utils::getOrderTransactionsFormatted($transactions);
+        $orderSlips = $order->getOrderSlipsCollection()->getResults();
+        $orderSlips = array_filter($orderSlips, function ($orderSlip) use ($orderTransactionsFormatted) {
+            return !in_array($orderSlip->id, $orderTransactionsFormatted['order_slip_used']);
+        });
 
-    /**
-     * Get PayXpert Url depending of the env
-     *
-     * @return string Url
-     */
-    public function getPayXpertUrl()
-    {
-        $url = Configuration::get('PAYXPERT_URL');
-
-        if (Tools::strlen(trim($url)) <= 0) {
-            $url = 'https://connect2.payxpert.com/';
-        }
-
-        return $url;
-    }
-
-    /**
-     * Get the iframe config value
-     *
-     * @return boolean
-     */
-    public function isIframeMode()
-    {
-        $is_iframe = Configuration::get('PAYXPERT_IS_IFRAME');
-
-        return $is_iframe === 'true' ? true : false;
-    }
-
-    /**
-     * Returns the modules path
-     *
-     * @return string
-     */
-    public function getPath()
-    {
-        return $this->_path;
-    }
-
-    /* Theses functions are used to support all versions of Prestashop */
-    public function assignSmartyVariable($name, $value)
-    {
-        // Check if context smarty variable is available
-        if (isset($this->context->smarty)) {
-            return $this->context->smarty->assign($name, $value);
-        } else {
-            // Use the global variable
-            if (!isset($smarty)) {
-                $smarty = $this->context->smarty;
+        if (!empty($orderTransactionsFormatted['refundable']) && !empty($orderSlips)) {
+            $orderSlipChoices = [];
+            foreach ($orderSlips as $orderSlip) {
+                $orderSlip = (array) $orderSlip;
+                $orderSlipChoices[] = [
+                    'id' => $orderSlip['id'],
+                    'name' => '#' . $orderSlip['id'] . ' | ' . $this->l('Amount') . ': ' . Tools::ps_round($orderSlip['amount'], _PS_PRICE_COMPUTE_PRECISION_, PS_ROUND_UP),
+                ];
             }
 
-            return $smarty->assign($name, $value);
-        }
-    }
-
-    public function getModuleLinkCompat($module, $controller = 'default', $params = null)
-    {
-        if (class_exists('Context')) {
-            if (!$params) {
-                $params = array();
+            $transactionChoices = [];
+            foreach ($transactions as $transaction) {
+                $transactionChoices[] = [
+                    'id' => $transaction['id_payxpert_payment_transaction'],
+                    'name' => '#' . $transaction['transaction_id'] . ' | ' . $this->l('Amount') . ': ' . Tools::ps_round($transaction['amount'], _PS_PRICE_COMPUTE_PRECISION_) . ' ' . $transaction['currency'],
+                ];
             }
 
-            return Context::getContext()->link->getModuleLink($module, $controller, $params);
-        } else {
-            if ($controller == 'default') {
-                if ($params) {
-                    $params = "?" . $params;
+            $this->context->smarty->assign([
+                'orderSlipChoices' => $orderSlipChoices,
+                'transactionChoices' => $transactionChoices,
+            ]);
+
+            $refundForm = $this->display(__FILE__, 'views/templates/hook/display_admin_order/refund_form.tpl');
+        }
+
+        $this->context->smarty->assign([
+            'payxpert_messages' => $messages,
+            'module_dir' => _MODULE_DIR_ . 'payxpert/',
+            'transactions' => $transactions,
+            'refundable_transactions' => $orderTransactionsFormatted['refundable'],
+            'logo_path' => Media::getMediaPath(_PS_MODULE_DIR_ . $this->name . '/views/img/logo.png'),
+            'has_order_slips' => count($orderSlips) > 0,
+            'is_refund' => _PS_OS_REFUND_ == $order->current_state,
+            'transaction_refund_form' => isset($refundForm) ? $refundForm : null,
+            'display_paybylink' => $isPayByLinkEnable && $osWaitingPaybylink && $configuration->hasPaymentMethod(Utils::CREDIT_CARD),
+            'display_paybylink_x2' => $instalmentOK && $configuration->hasPaymentMethod(Utils::CREDIT_CARD_X2),
+            'display_paybylink_x3' => $instalmentOK && $configuration->hasPaymentMethod(Utils::CREDIT_CARD_X3),
+            'display_paybylink_x4' => $instalmentOK && $configuration->hasPaymentMethod(Utils::CREDIT_CARD_X4),
+            'paybylink_sent' => $payByLinkSent,
+            'code_success' => PayxpertPaymentTransaction::RESULT_CODE_SUCCESS,
+            'liability_shift_ok' => PayxpertPaymentTransaction::LIABILITY_SHIFT_OK,
+            'capturable_transaction_ids' => array_keys($orderTransactionsFormatted['capturable']),
+            'iterationsLeft' => $iterationsLeft,
+            'needSync' => $needSync,
+        ]);
+
+        return $this->display(__FILE__, 'views/templates/hook/display_admin_order/transactions.tpl');
+    }
+
+    public function hookDisplayCustomerAccount($params)
+    {
+        $this->context->smarty->assign([
+            'module_dir' => $this->_path,
+        ]);
+
+        return $this->context->smarty->fetch($this->local_path . 'views/templates/hook/display_customer_account/my-account.tpl');
+    }
+
+    public function hookPaymentOptions($params)
+    {
+        $paymentOptions = [];
+        $cart = $params['cart'];
+
+        // Fix error on checkout step - Address
+        if (0 == $cart->id_address_delivery) {
+            return $paymentOptions;
+        }
+
+        try {
+            $amount = $cart->getOrderTotal();
+            $configuration = PayxpertConfiguration::getCurrentObject();
+
+            if (!$configuration) {
+                Logger::critical('Configuration not found');
+
+                return $paymentOptions;
+            }
+
+            if (!$configuration->active) {
+                return $paymentOptions;
+            }
+
+            $applepayEnable = $configuration->hasPaymentMethod('Applepay');
+            $redirectMode = $configuration->redirect_mode;
+            $configurationPaymentMethods = $configuration->getConfigurationPaymentMethods();
+            $configurationPaymentMethodsLang = Utils::formatConfigurationPaymentMethodsLang($configuration->getPaymentMethodsLang());
+
+            foreach ($configurationPaymentMethods as $configurationPaymentMethod) {
+                if (!$configurationPaymentMethod->active) {
+                    continue;
                 }
 
-                return Configuration::get('PS_SSL_ENABLED') ? 'https' : 'http' . '://' . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . $module . '.php' .
-                     $params;
-            } else {
-                return Configuration::get('PS_SSL_ENABLED') ? 'https' : 'http' . '://' . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ .
-                     'modules/payxpert/' . $controller . '.php';
+                $paymentMethod = new PayxpertPaymentMethod($configurationPaymentMethod->payment_method_id);
+                $paymentMethodConfig = json_decode($paymentMethod->config, true);
+
+                if (
+                    !Utils::isPaymentMethodAvailableForCurrency($cart->id_currency, $paymentMethodConfig)
+                    || !Utils::isPaymentMethodAvailableForCountry($cart->id_address_invoice, $paymentMethodConfig)
+                    || !Utils::isPaymentMethodAvailableForFrontOffice($paymentMethodConfig)
+                    || !Utils::isPaymentMethodAvailableForBackOffice($paymentMethodConfig)
+                ) {
+                    continue;
+                }
+
+                $paymentOption = new PaymentOption();
+                $paymentOption->setModuleName($this->name);
+                $paymentOption->setCallToActionText($configurationPaymentMethodsLang[$paymentMethod->id_payxpert_payment_method][$this->context->language->id]);
+                $paymentOption->setAction($this->context->link->getModuleLink($this->name, 'payment', [], true));
+
+                $inputs = [
+                    'payment_method' => [
+                        'name' => 'payxpert_payment_method',
+                        'type' => 'hidden',
+                        'value' => $paymentMethod->id_payxpert_payment_method,
+                    ],
+                ];
+
+                $pMode = $paymentMethodConfig['payment_mode'] ?? PaymentMode::SINGLE;
+                $pMethode = $paymentMethodConfig['payment_method'] ?? PaymentMethod::CREDIT_CARD;
+
+                // 18px height max for classic display
+                if (isset($paymentMethodConfig['logo_img'])) {
+                    $paymentOption->setLogo(Media::getMediaPath(_PS_MODULE_DIR_ . $this->name . '/views/img/payment_method_logo/' . $paymentMethodConfig['logo_img']));
+                    
+                    // Special case for Amex
+                    if ($pMethode == PaymentMethod::CREDIT_CARD && $configuration->amex) {
+                        $logoImg = preg_replace('/(\.[a-z0-9]+)$/i', '_with_amex$1', $paymentMethodConfig['logo_img']);
+                        $paymentOption->setLogo(Media::getMediaPath(_PS_MODULE_DIR_ . $this->name . '/views/img/payment_method_logo/' . $logoImg));
+                    }
+                }
+
+                /* Special features for SIMPLE credit card payment method */
+                if (Utils::CREDIT_CARD == $paymentMethod->name && PayxpertConfiguration::REDIRECT_MODE_REDIRECT == $redirectMode && $configuration->oneclick) {
+                    $inputs['register_card'] = [
+                        'name' => 'payxpert_oneclick_register_card',
+                        'type' => 'hidden',
+                        'value' => 0,
+                    ];
+
+                    $paymentOption->setAdditionalInformation($this->context->smarty->fetch($this->local_path . 'views/templates/hook/payment_options/oneclick.tpl'));
+                }
+
+                /* Keep it before seamless checkout */
+                $setAdditionnalInfoInstalment = false;
+                if (PaymentMode::INSTALMENTS == $pMode) {
+                    if (!isset($paymentMethodConfig['instalment_configuration']) || $amount < $configuration->instalment_payment_min_amount) {
+                        continue;
+                    }
+
+                    if (!$configuration->instalment_logo_active) {
+                        $paymentOption->setLogo(null);
+                    }
+
+                    $schedule = Utils::buildInstalmentSchedule(
+                        $amount,
+                        $configuration->{$paymentMethodConfig['instalment_configuration']},
+                        $paymentMethodConfig['instalment_x_times'],
+                        $cart->id_currency
+                    );
+
+                    $this->context->smarty->assign([
+                        'schedule' => $schedule
+                    ]);
+
+                    $setAdditionnalInfoInstalment = true;
+                }
+
+                /* Seamless checkout for credit card payment method */
+                if ($pMethode == PaymentMethod::CREDIT_CARD && PayxpertConfiguration::REDIRECT_MODE_SEAMLESS == $redirectMode) {
+                    // PreparePayment
+                    $preparedPayment = Webservice::preparePayment(
+                        $configuration,
+                        $pMethode,
+                        $params['cart'],
+                        $pMode,
+                        $setAdditionnalInfoInstalment ? [
+                            'firstPercentage' => $configuration->{$paymentMethodConfig['instalment_configuration']},
+                            'xTimes' => $paymentMethodConfig['instalment_x_times']
+                        ] : []
+                    );
+
+                    if (isset($preparedPayment['error'])) {
+                        Logger::critical($preparedPayment['error']);
+                        continue;
+                    }
+
+                    $this->context->smarty->assign([
+                        'customerToken' => $preparedPayment['customerToken'],
+                        'uniqueContainerId' => Tools::passwdGen('20', 'NUMERIC'),
+                        'applepay' => $applepayEnable,
+                        'ajaxUrl' => $this->context->link->getModuleLink('payxpert', 'ajax'),
+                        'payButtonAmount' => Tools::displayPrice(number_format($cart->getOrderTotal(), 2))
+                    ]);
+
+                    $inputs += [
+                        'seamless' => [
+                            'name' => 'seamless',
+                            'type' => 'hidden',
+                            'value' => 1,
+                        ],
+                    ];
+
+                    if ($setAdditionnalInfoInstalment) {
+                        $this->context->smarty->assign([
+                            'seamless' => true,
+                            'payButtonAmount' => Tools::displayPrice(number_format($schedule[0]['amount'], 2))
+                        ]);
+                    } else {
+                        $paymentOption->setAdditionalInformation($this->context->smarty->fetch($this->local_path . 'views/templates/hook/payment_options/seamless.tpl'));
+                    }
+                }
+
+                if ($setAdditionnalInfoInstalment) {
+                    $paymentOption->setAdditionalInformation($this->context->smarty->fetch($this->local_path . 'views/templates/hook/payment_options/instalment.tpl'));
+                }
+
+                $paymentOption->setInputs($inputs);
+                $paymentOptions[] = $paymentOption;
             }
-        }
-    }
-
-    public function getPageLinkCompat($controller, $ssl = null, $id_lang = null, $request = null, $request_url_encode = false, $id_shop = null)
-    {
-        if (class_exists('Context')) {
-            return Context::getContext()->link->getPageLink($controller, $ssl, $id_lang, $request, $request_url_encode, $id_shop);
-        } else {
-            if ($controller == 'contact') {
-                return Configuration::get('PS_SSL_ENABLED') ? 'https' : 'http' . '://' . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . 'contact-form.php';
-            } else {
-                $params = (isset($params)) ? "?" . $params : "";
-
-                return Configuration::get('PS_SSL_ENABLED') ? 'https' : 'http' . '://' . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . $controller .
-                     '.php' . $params;
-            }
-        }
-    }
-
-    public function addLog($message, $severity = 1, $errorCode = null, $objectType = null, $objectId = null, $allowDuplicate = true)
-    {
-        if (class_exists('PrestaShopLogger')) {
-            PrestaShopLogger::addLog($message, $severity, $errorCode, $objectType, $objectId, $allowDuplicate);
-        } else if (class_exists('Logger')) {
-            Logger::addLog($message, $severity, $errorCode, $objectType, $objectId, $allowDuplicate);
-        } else {
-            error_log($message . "(" . $errorCode . ")");
-        }
-    }
-
-    /* Callback authenticity check methods */
-    public static function getCallbackAuthenticityData($orderId, $secure_key)
-    {
-        return sha1($orderId . $secure_key . html_entity_decode(Configuration::get('PAYXPERT_PASSWORD')));
-    }
-
-    public static function checkCallbackAuthenticityData($callbackData, $orderId, $secure_key)
-    {
-        return (strcasecmp($callbackData, PayXpert::getCallbackAuthenticityData($orderId, $secure_key)) === 0);
-    }
-
-    /* Theses functions are only used for Prestashop prior to version 1.5 */
-    public function execPayment($cart)
-    {
-        if (!isset($cookie)) {
-            $cookie = $this->context->cookie;
+        } catch (Exception $e) {
+            Logger::critical($e->getMessage());
         }
 
-        $this->assignSmartyVariable('nbProducts', $cart->nbProducts());
-        $this->assignSmartyVariable('cust_currency', $cart->id_currency);
-        $this->assignSmartyVariable('currencies', $this->getCurrency());
-        $this->assignSmartyVariable('total', $cart->getOrderTotal(true, 3));
-        $this->assignSmartyVariable('isoCode', Language::getIsoById((int)($cookie->id_lang)));
-        $this->assignSmartyVariable('this_path', $this->_path);
-        $this->assignSmartyVariable('this_link', $this->getModuleLinkCompat('payxpert', 'redirect'));
-        $this->assignSmartyVariable('this_link_back', $this->getPageLinkCompat('order', true, null, "step=3"));
-
-        return $this->display(__FILE__, '/views/templates/front/payment_execution.tpl');
+        return $paymentOptions;
     }
 
-    public function displayErrorPage($message)
+    public function hookPaymentReturn($params)
     {
-        $this->assignSmartyVariable('errorMessage', $message);
-        $this->assignSmartyVariable('this_link_back', $this->getPageLinkCompat('order', true, null, "step=3"));
-
-        return $this->display(__FILE__, '/views/templates/front/payment_error.tpl');
     }
 }

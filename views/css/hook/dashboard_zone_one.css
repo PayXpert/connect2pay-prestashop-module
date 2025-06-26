@@ -1,0 +1,92 @@
+#payxpert .log-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: Arial, sans-serif;
+}
+
+#payxpert .log-table th,
+#payxpert .log-table td {
+    border: 1px solid #ccc;
+    padding: 3px 6px;
+    font-size: 12px;
+    vertical-align: middle;
+    word-break: break-word;
+}
+
+#payxpert .log-table th {
+    background-color: #f2f2f2;
+    font-weight: 600;
+    text-align: left;
+}
+
+#payxpert .log-table tr:hover {
+    background-color: #e9f2fb; /* hover doux */
+}
+
+#payxpert .details-button {
+    background-color: #007bff;
+    color: white;
+    padding: 2px 4px;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+
+#payxpert .details-button:hover {
+    background-color: #0056b3;
+}
+
+#payxpert .log-details {
+    display: none;
+    background-color: #e9f2fb;
+}
+
+#payxpert .log-details td {
+    font-size: 12px;
+    color: #333;
+    padding: 10px 6px;
+}
+
+#payxpert .log-details pre {
+    margin: 0;
+    padding: 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+#payxpert .context-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 5px;
+    max-height: 120px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex-direction: column;
+}
+
+#payxpert .context-badges .pxp-badge {
+    padding: 3px 7px;
+    border-radius: 12px;
+    font-size: 11px;
+    white-space: nowrap;
+    max-width: fit-content;
+    width: auto;
+    align-self: flex-start;
+}
+
+#payxpert .context-badges .pxp-badge-info {
+    background-color: #e0f0ff;
+    color: #004085;
+}
+
+#payxpert .context-badges .pxp-badge-commit {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+#payxpert .context-badges .pxp-badge-error {
+    background-color: #f8d7da;
+    color: #721c24;
+}

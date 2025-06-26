@@ -1,0 +1,34 @@
+Paiement de votre commande
+
+Bonjour {firstname} {lastname},
+
+Merci pour votre commande sur {shop_name} !
+
+Il semble que le paiement de votre commande #{order_reference} n’a pas encore été finalisé.
+
+Pour procéder au paiement, veuillez cliquer sur le lien ci-dessous :
+
+Payer ma commande : {payment_link}
+
+Récapitulatif de votre commande :
+------------------------------
+Numéro de commande : {order_reference}
+Date de commande : {order_date}
+Produits :
+{order_products}   (Exemple : - T-shirt Bleu x1 — 19,99 €)
+
+Sous-total : {order_subtotal}
+Livraison : {order_shipping}
+Total à payer : {order_total}
+
+Ce lien de paiement est sécurisé et restera actif jusqu’au {payment_deadline}.
+
+Si vous avez la moindre question, n’hésitez pas à nous contacter.
+
+Merci encore,
+L’équipe {shop_name}
+
+------------------------------
+{shop_name}
+{shop_url}
+Powered by PrestaShop

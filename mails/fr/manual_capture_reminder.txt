@@ -1,0 +1,25 @@
+Rappel de Capture de Transactions en Attente
+
+Ce message est un rappel concernant les transactions en attente de capture sur votre boutique {shop_name}.
+
+⚠ Important
+Elles doivent être capturées avant l’expiration de l’autorisation afin d’éviter la libération des fonds.
+
+Expiration de l’autorisation : {expiry_date}
+
+Nombre total de commandes : {total_orders}
+
+Montant total des commandes par devise :
+
+{total_orders_amount_per_currency_table}
+
+Détails des commandes :
+
+{order_table}
+
+Merci de traiter ces paiements dès que possible.
+
+📩 Besoin d’aide ? Contactez notre support technique.
+
+Cordialement,
+L’équipe PayXpert

@@ -1,0 +1,23 @@
+Pending Transaction Capture Reminder
+
+This message is a reminder regarding pending transactions being captured on your store {shop_name}.
+
+⚠ Important
+They must be captured before the authorization expires to avoid the release of funds.
+
+- Authorization Expiration: {expiry_date}
+- Total number of orders: {total_orders}
+- Total orders amount per currency:
+
+{total_orders_amount_per_currency_table}
+
+Order details:
+
+{order_table}
+
+Please process these payments as soon as possible.
+
+📩 Need help? Contact our technical support
+
+Best regards,
+The PayXpert Team

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+  <title>Complete Your Order</title>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style type="text/css">
+    body { margin: 0; padding: 0; background-color: #eeeeee; font-family: 'Open Sans', Arial, sans-serif; }
+    .container { max-width: 604px; margin: auto; background: #ffffff; border-radius: 4px; box-shadow: 0 20px 30px rgba(0, 0, 0, 0.1); }
+    .header, .footer { text-align: center; padding: 25px; }
+    .content { padding: 30px 25px; color: #363a41; font-size: 14px; line-height: 22px; }
+    .btn { display: inline-block; margin: 20px 0; padding: 15px 30px; background-color: #25b9d7; color: #ffffff; text-decoration: none; font-weight: 600; border-radius: 3px; }
+    .order-summary { margin-top: 20px; border-top: 1px solid #ddd; padding-top: 15px; }
+    .order-summary p { margin: 5px 0; }
+    .order-summary .total { font-weight: 700; font-size: 16px; }
+    a { color: #25b9d7; text-decoration: underline; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Logo -->
+    <div class="header">
+      <a href="{shop_url}" target="_blank">
+        <img src="{shop_logo}" alt="{shop_name}" style="max-width:150px;" />
+      </a>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+      <p>Hello {firstname} {lastname},</p>
+
+      <p>Thank you for your order on <strong>{shop_name}</strong>!</p>
+      <p>It looks like your payment for order <strong>#{order_reference}</strong> hasn't been completed yet.</p>
+
+      <p>To proceed with the payment, simply click the button below:</p>
+
+      <p style="text-align:center;">
+        <a href="{payment_link}" class="btn" target="_blank">Pay for My Order</a>
+      </p>
+
+      <!-- Order Recap -->
+      <div class="order-summary">
+        <p><strong>Your Order Summary:</strong></p>
+        <p>Order Number: {order_reference}</p>
+        <p>Order Date: {order_date}</p>
+        <p>Items:</p>
+        {order_products} <!-- Example: <p>- Blue T-shirt x1 — €19.99</p> -->
+        <p>Subtotal: {order_subtotal}</p>
+        <p>Shipping: {order_shipping}</p>
+        <p class="total">Total Due: {order_total}</p>
+      </div>
+
+      <p>This secure payment link will remain active until <strong>{payment_deadline}</strong>.</p>
+      <p>If you have any questions, feel free to reach out to us.</p>
+
+      <p>Thanks again,<br>The <strong>{shop_name}</strong> Team</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <p><a href="{shop_url}">{shop_name}</a></p>
+      <p style="font-size:12px; color:#999;">Powered by <a href="https://www.prestashop-project.org/" style="color:#999;">PrestaShop</a></p>
+    </div>
+  </div>
+</body>
+</html>

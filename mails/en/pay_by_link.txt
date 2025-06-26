@@ -1,0 +1,34 @@
+Payment for your order
+
+Hello {firstname} {lastname},
+
+Thank you for your order at {shop_name}!
+
+It seems that the payment for your order #{order_reference} has not been completed yet.
+
+To proceed with the payment, please click the link below:
+
+Pay my order: {payment_link}
+
+Order Summary:
+------------------------------
+Order Number: {order_reference}
+Order Date: {order_date}
+Products:
+{order_products}   (Example: - Blue T-shirt x1 — $19.99)
+
+Subtotal: {order_subtotal}
+Shipping: {order_shipping}
+Total to Pay: {order_total}
+
+This payment link is secure and will remain active until {payment_deadline}.
+
+If you have any questions, feel free to contact us.
+
+Thank you again,
+The {shop_name} Team
+
+------------------------------
+{shop_name}
+{shop_url}
+Powered by PrestaShop

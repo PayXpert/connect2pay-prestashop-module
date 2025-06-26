@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>Manual Capture Notification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            color: #555;
+            background-color: #f9f9f9;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            background: #ffffff;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin: auto;
+        }
+
+        h2 {
+            color: #333;
+            text-align: center;
+        }
+
+        p {
+            margin-bottom: 15px;
+        }
+
+        .order-summary {
+            background: #f2f2f2;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .order-summary strong {
+            color: #000;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #0078d7;
+            color: #ffffff;
+        }
+
+        .footer {
+            text-align: center;
+            font-size: 12px;
+            color: #888;
+            margin-top: 20px;
+        }
+
+        .total-table th:first-child,
+        .total-table td:first-child {
+            text-align: right;
+        }
+
+        .total-table th:nth-child(2),
+        .total-table td:nth-child(2) {
+            text-align: center;
+        }
+
+        .order-table th:first-child,
+        .order-table td:first-child {
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Pending Transaction Capture Reminder</h2>
+        <hr>
+
+        <p>This is a reminder regarding pending transaction captures on your store <strong>{shop_name}</strong>.</p>
+
+        <div class="order-summary">
+            <p><strong>⚠ Important</strong></p>
+            <p>These transactions must be captured before the authorization expires to avoid the release of funds.</p>
+            <p><strong>Authorization Expiration Date:</strong> {expiry_date}</p>
+            <p><strong>Total Orders:</strong> {total_orders}</p>
+            <p><strong>Order Amount by Currency:</strong></p>
+            <div class="total-table">{total_orders_amount_per_currency_table}</div>
+        </div>
+
+        <h3>Order Details:</h3>
+        <div class="order-table">
+            {order_table}
+        </div>
+
+        <p>Please process these payments as soon as possible to ensure successful capture.</p>
+
+        <p>📩 <strong>Need help?</strong> Reach out to our technical support team.</p>
+
+        <div class="footer">
+            <p>Best regards,<br>The PayXpert Team</p>
+        </div>
+    </div>
+</body>
+</html>

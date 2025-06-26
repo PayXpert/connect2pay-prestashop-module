@@ -1,0 +1,10 @@
+.modal__2HmIT,
+.modal__2HmIT.open,
+.modal__2HmIT.show,
+.modal__2HmIT.active {
+    z-index: 9999 !important;
+}
+
+.table-instalment thead {
+    background-color: #f0f0f0; /* Gris clair */
+}

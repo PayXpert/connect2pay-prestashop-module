@@ -1,0 +1,28 @@
+includes:
+  - %currentWorkingDirectory%/vendor/prestashop/php-dev-tools/phpstan/ps-module-extension.neon
+parameters:
+  reportUnmatchedIgnoredErrors: false
+  level: 4
+  excludePaths:
+    - vendor/
+  bootstrapFiles:
+    - %currentWorkingDirectory%/vendor/autoload.php
+  scanDirectories:
+    - ../../classes
+    - ../../src
+    - vendor/payxpert/connect2pay/src/containers
+    - vendor/payxpert/connect2pay/src/helpers
+  ignoreErrors:
+    -
+      message: '#Property [a-zA-Z0-9\\_]+::\$id[a-zA-Z\\_]* is never written, only read.#'
+      path: */Entity/*
+    -
+      message: '#Property [a-zA-Z0-9\\_]+::\$[a-zA-Z\\_]* is never read, only written.#'
+    -
+      message: '#Call to an undefined method Module::[a-zA-Z]*#'
+    # https://github.com/PrestaShop/PrestaShop/commit/e28139cfb5fa70ba63714cacd93227d9ec7167ea
+    - message: '#Property CustomerCore::\$passwd \(int\) does not accept string.#'
+    # https://github.com/PrestaShop/PrestaShop/commit/4b8936df1c800abd4a6c371048b12ce4b92c3013#diff-98d8ae92e3bdf87d1bd72ab244ca1619cb90f3fa8d0ed9a4c462ce1b929092b4
+    - message: '#Access to an undefined property Cookie::\$(id_lang|id_customer|customer_lastname|customer_firstname|passwd|logged|email|is_guest).#'
+    # https://github.com/PrestaShop/PrestaShop/commit/494b09f35f2edf7b24b71d2fd2a9cc3df515cd0b
+    - message: '#Property ProductCore::\$redirect_type \(bool\) does not accept string.#'

@@ -1,118 +1,70 @@
 <?php
-/**
- * Copyright 2013-2018 PayXpert
- *
- *   Licensed under the Apache License, Version 2.0 (the "License");
- *   you may not use this file except in compliance with the License.
- *   You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- *   Unless required by applicable law or agreed to in writing, software
- *   distributed under the License is distributed on an "AS IS" BASIS,
- *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *   See the License for the specific language governing permissions and
- *   limitations under the License.
- *
- *  @author    Regis Vidal
- *  @copyright 2013-2018 PayXpert
- *  @license   http://www.apache.org/licenses/LICENSE-2.0 Apache License, Version 2.0 (the "License")
- */
 
-require_once dirname(__FILE__) . '/../../lib/Connect2PayClient.php';
+use Payxpert\Classes\PayxpertConfiguration;
+use Payxpert\Classes\PayxpertPaymentMethod;
+use PayXpert\Connect2Pay\containers\constant\PaymentMethod;
+use PayXpert\Connect2Pay\containers\constant\PaymentMode;
+use Payxpert\Exception\ConfigurationNotFoundException;
+use Payxpert\Exception\PaymentMethodNotFoundException;
+use Payxpert\Exception\PayxpertException;
+use Payxpert\Utils\Logger;
+use Payxpert\Utils\Webservice;
 
-/**
- *
- * @since 1.5.0
- */
 class PayxpertPaymentModuleFrontController extends ModuleFrontController
 {
-    public $ssl = true;
-    public $display_column_left = false;
-
-    /**
-     *
-     * @see FrontController::initContent()
-     */
-    public function initContent()
+    public function postProcess()
     {
-        parent::initContent();
+        try {
+            Logger::info('Payment Call');
+            $configuration = PayxpertConfiguration::getCurrentObject();
 
-        $cart = $this->context->cart;
-
-        // Default value for Prestashop < 1.7
-        $template = 'payment_execution.tpl';
-
-        if (version_compare(_PS_VERSION_, '1.7', '>=')) {
-            $template = 'module:' . $this->module->name . '/views/templates/front/payment_execution_credit_card.tpl';
-        }
-
-        $params = array();
-
-        // These should be filled only with Prestashop >= 1.7
-        $paymentType = Tools::getValue('payment_type', null);
-        $paymentProvider = Tools::getValue('payment_provider', null);
-
-        if ($paymentType !== null && PayXpert\Connect2Pay\C2PValidate::isPaymentMethod($paymentType)) {
-            $params['payment_type'] = $paymentType;
-
-            if ($paymentProvider !== null && PayXpert\Connect2Pay\C2PValidate::isPaymentNetwork($paymentProvider)) {
-                $params['payment_provider'] = $paymentProvider;
+            if (!$configuration) {
+                throw new ConfigurationNotFoundException();
             }
 
-            switch ($paymentType) {
-                case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_BANKTRANSFER:
-                    if (version_compare(_PS_VERSION_, '1.7', '>=')) {
-                        $template = 'module:' . $this->module->name . '/views/templates/front/payment_execution_bank_transfer.tpl';
-                    } else {
-                        $template = 'payment_execution_bank_transfer16.tpl';
-                    }
+            $paymentMethodId = Tools::getValue('payxpert_payment_method');
 
-                    if (isset($params['payment_provider'])) {
-                        switch ($params['payment_provider']) {
-                            case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_SOFORT:
-                                $paymentLogo = 'sofort';
-                                break;
-                            case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_PRZELEWY24:
-                                $paymentLogo = 'przelewy24';
-                                break;
-                            case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_IDEAL:
-                                $paymentLogo = 'ideal';
-                                break;
-                            case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_NETWORK_GIROPAY:
-                                $paymentLogo = 'giropay';
-                                break;
-                        }
-                    }
-                    break;
-                case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_WECHAT:
-                    $paymentLogo = 'wechat';
-                    $template = 'payment_execution_wechat16.tpl';
-                    break;
-                case PayXpert\Connect2Pay\Connect2PayClient::PAYMENT_METHOD_ALIPAY:
-                    $paymentLogo = 'alipay';
-                    $template = 'payment_execution_alipay16.tpl';
-                    break;
-                default:
-                    $paymentLogo = 'creditcard';
-                    break;
+            if (
+                !$paymentMethodId
+                || !is_numeric($paymentMethodId)
+                || !$configuration->hasConfigurationPaymentMethodId($paymentMethodId)
+            ) {
+                throw new PaymentMethodNotFoundException();
             }
 
-            $this->context->smarty->assign("payment_logo", $paymentLogo);
+            $paymentMethod = new PayxpertPaymentMethod($paymentMethodId);
+            $paymentMethodConfig = json_decode($paymentMethod->config, true);
+            $paymentMode = $paymentMethodConfig['payment_mode'] ?? PaymentMode::SINGLE;
+
+            $preparedPayment = Webservice::preparePayment(
+                $configuration,
+                $paymentMethodConfig['payment_method'] ?? PaymentMethod::CREDIT_CARD,
+                $this->context->cart,
+                $paymentMode,
+                PaymentMode::INSTALMENTS == $paymentMode ? (
+                    isset($paymentMethodConfig['instalment_configuration']) ? [
+                        'firstPercentage' => $configuration->{$paymentMethodConfig['instalment_configuration']},
+                        'xTimes' => $paymentMethodConfig['instalment_x_times'],
+                    ] : []
+                ) : []
+            );
+
+            if (isset($preparedPayment['error'])) {
+                throw new Exception($preparedPayment['error']);
+            }
+
+            $urlRedirect = $preparedPayment['redirectUrl'];
+        } catch (PayxpertException $ce) {
+            $this->errors[] = $ce->getMessage();
+        } catch (Exception $e) {
+            Logger::critical($e->getMessage());
+            $this->errors[] = $this->module->l('An error occurred during the payment process. Please try again.', 'payxpertpaymentmodule');
         }
 
-        $this->context->smarty->assign(
-            array(/* */
-                'nbProducts' => $cart->nbProducts(), /* */
-                'cust_currency' => (int)($cart->id_currency), /* */
-                'total' => $cart->getOrderTotal(true, Cart::BOTH), /* */
-                'isoCode' => $this->context->language->iso_code, /* */
-                'this_path' => $this->module->getPathUri(), /* */
-                'this_link' => $this->module->getModuleLinkCompat('payxpert', 'redirect', $params), /* */
-                'this_link_back' => $this->module->getPageLinkCompat('order', true, null, "step=3") /* */
-            ) /* */
-        );
+        if (!empty($this->errors)) {
+            $this->redirectWithNotifications($this->context->link->getPageLink('order', true, null, ['step' => 3]));
+        }
 
-        $this->setTemplate($template);
+        Tools::redirect(isset($urlRedirect) ? $urlRedirect : 'index.php');
     }
 }

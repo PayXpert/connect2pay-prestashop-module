@@ -1,0 +1,46 @@
+#payxpert-transactions .refund-form-container {
+    max-width: 600px; /* Largeur max du formulaire */
+    margin: 20px auto; /* Centre horizontalement */
+    padding: 20px;
+    background: #fff; /* Fond blanc */
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Ombre douce */
+}
+
+#payxpert-transactions .refund-form-title {
+    text-align: center;
+    font-size: 22px;
+    margin-bottom: 15px;
+    font-weight: bold;
+}
+
+#payxpert-transactions .refund-form .form-group {
+    margin-bottom: 15px; /* Espacement entre les champs */
+}
+
+#payxpert-transactions .submit-container {
+    text-align: center; /* Centre le bouton */
+}
+
+#payxpert-transactions .submit-container .btn {
+    padding: 10px 20px;
+    font-size: 16px;
+}
+
+#payxpert-transactions #refund_form_submit_btn {
+    margin: 0 5px 5px 0;
+}
+
+#payxpert-transactions .panel-footer {
+    text-align:right;
+}
+
+#payxpert-transactions .payxpert-transactions-logo {
+    height:100%;
+    max-height:35px;
+}
+
+/** Override bootstrap css **/
+.bootstrap .fixed-width-xl {
+    width:100% !important;
+}

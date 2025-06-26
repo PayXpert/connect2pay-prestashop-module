@@ -1,0 +1,72 @@
+.configuration-header {
+    display: flex;
+    margin-bottom: .625rem;
+}
+
+.configuration-header .logo-container {
+    width: 200px;
+    flex-shrink: 0;
+    align-items: center;
+    display: flex;
+}
+
+.configuration-header .logo-container img {
+    width: 100%
+}
+
+.configuration-header .description {
+    flex: 1;
+    padding-left: 10px;
+}
+
+.configuration-block {
+    display: flex;
+}
+
+.configuration-block .configuration-information {
+    flex: 1;
+}
+
+.configuration-block .support {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: center;
+    width: 200px;
+    flex-shrink: 0;
+    padding: 10px;
+} 
+
+.configuration-header .panel {
+    margin-bottom:0px !important;
+    height: 100%;
+}
+
+.bootstrap label.control-label span.label-tooltip {
+    background-color: #edf7fb;
+    border: none;
+    border-bottom: 1px solid #d8edf7;
+    border-radius: 3px;
+    color: #3586ae;
+    font-size: 13px;
+    padding: 0 5px;
+    text-decoration: none;
+}
+
+.label-tooltip::after {
+    content: '';
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    background-image: url('../../../img/icons/icon-info.png');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    margin-left: 6px;
+    vertical-align: middle;
+    cursor: pointer;
+}
+
+.banner-img {
+    cursor:pointer;
+}

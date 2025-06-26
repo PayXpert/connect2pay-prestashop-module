@@ -1,0 +1,18 @@
+Boutique: {shop_name}
+Clé publique API : {mid}
+
+Nom : {lastname}
+Prénom : {firstname}
+Email : {email}
+
+Demande :
+{subject}
+
+
+CMS : PrestaShop
+Version du CMS : v{cms_version}
+Version de PHP : v{php_version}
+Version du module : v{module_version}
+
+Module surchargé au niveau de PS : {is_overridden_in_override}
+Module surchargé au niveau du theme : {is_overridden_in_theme}

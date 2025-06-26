@@ -1,0 +1,17 @@
+Store: {shop_name}
+Public API Key: {mid}
+
+Last Name: {lastname}
+First Name: {firstname}
+Email: {email}
+
+Request:
+{subject}
+
+CMS: PrestaShop
+CMS Version: v{cms_version}
+PHP Version: v{php_version}
+Module Version: v{module_version}
+
+Module overridden in PS overrides folder: {is_overridden_in_override}
+Module overridden in theme folder: {is_overridden_in_theme}

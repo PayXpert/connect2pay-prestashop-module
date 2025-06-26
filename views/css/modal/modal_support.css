@@ -1,0 +1,20 @@
+#payxpert_modal_support .logo-container {
+    width:250px;
+    margin: auto;
+    padding-bottom: 1.5rem;
+}
+
+#payxpert_modal_support .form-control {
+    border-radius: 8px;
+    border: 1px solid #ced4da;
+    padding: 10px;
+}
+
+#payxpert_modal_support .form-group {
+    margin-bottom: 15px;
+}
+
+#payxpert_modal_support label.required::before{
+    content: "*";
+    margin-right: 5px;
+}
